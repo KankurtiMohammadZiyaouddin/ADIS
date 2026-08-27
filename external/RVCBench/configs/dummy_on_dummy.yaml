@@ -1,0 +1,17 @@
+# @package _global_
+
+defaults:
+  - _self_
+  - /dataset: dummy
+  - /model: default
+
+base_dir: .
+run_name: dummy_on_dummy
+device: cpu
+
+protection:
+  name: Dummy
+  sampling_rate: 16000
+
+output_paths:
+  metrics_file: "metrics.json"
