@@ -1,6 +1,6 @@
 export default function ReportsPage() {
   return (
-    <main className="ml-[260px] pt-14 p-spacious min-h-screen">
+    <main className="flex-1 overflow-y-auto p-spacious min-h-screen">
       <div className="max-w-[1600px] mx-auto grid grid-cols-1 xl:grid-cols-12 gap-6 p-6">
         {/* Left Column: Reports List (Table) */}
         <div className="xl:col-span-5 flex flex-col gap-6">
