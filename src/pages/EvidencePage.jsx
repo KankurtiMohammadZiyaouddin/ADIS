@@ -1,271 +1,424 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+const INITIAL_EVIDENCE = [
+  {
+    id: 'EV-2023-089A',
+    filename: 'suspect_vehicle_cam2.jpg',
+    type: 'Image',
+    format: 'JPEG Image',
+    sha256: '8f4e27f6a9c8d3b2e1f4a7c8d9e0b1f2',
+    timestamp: '2023-10-24 14:32:11Z',
+    status: 'ANALYZED',
+    verdict: 'Likely Manipulated',
+    confidence: 88.5,
+    size: '4.2 MB',
+    resolution: '3840 x 2160',
+    device: 'Sony A7S III (EXIF)',
+    preview: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=600&auto=format&fit=crop&q=80',
+    isVideo: false,
+    route: '/image-forensics'
+  },
+  {
+    id: 'VID-4492-01',
+    filename: 'EVID_4492_INTERVIEW_CAM2.mp4',
+    type: 'Video',
+    format: 'H.264 Video (1080p60)',
+    sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    timestamp: '2026-08-27 14:15:22Z',
+    status: 'ANALYZED',
+    verdict: 'Deepfake Manipulated (98.4%)',
+    confidence: 98.4,
+    size: '48.2 MB',
+    resolution: '1920 x 1080',
+    device: 'Forensic Video Capture',
+    preview: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80',
+    isVideo: true,
+    route: '/video-forensics?videoId=VID-4492-01'
+  },
+  {
+    id: 'VID-4492-02',
+    filename: 'EVID_4492_SECURITY_HALLWAY.mp4',
+    type: 'Video',
+    format: 'H.264 Video (720p30)',
+    sha256: '7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069',
+    timestamp: '2026-08-27 15:40:10Z',
+    status: 'ANALYZED',
+    verdict: 'Likely Authentic (96.2%)',
+    confidence: 96.2,
+    size: '24.7 MB',
+    resolution: '1280 x 720',
+    device: 'CCTV Camera Node #04',
+    preview: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&auto=format&fit=crop&q=80',
+    isVideo: true,
+    route: '/video-forensics?videoId=VID-4492-02'
+  },
+  {
+    id: 'VID-4493-01',
+    filename: 'EVID_4493_PRESS_BRIEFING_DEEPFAKE.mp4',
+    type: 'Video',
+    format: 'HEVC / H.265 (1080p)',
+    sha256: '9f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9044',
+    timestamp: '2026-08-26 11:20:00Z',
+    status: 'ANALYZED',
+    verdict: 'Deepfake Manipulated (99.2%)',
+    confidence: 99.2,
+    size: '36.5 MB',
+    resolution: '1920 x 1080',
+    device: 'Digital Stream Intercept',
+    preview: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&auto=format&fit=crop&q=80',
+    isVideo: true,
+    route: '/video-forensics?videoId=VID-4493-01'
+  },
+  {
+    id: 'EV-2023-089C',
+    filename: 'ransom_note_scanned.pdf',
+    type: 'Document',
+    format: 'PDF Document',
+    sha256: '7a8b9e0f1a2b3c4d5e6f7a8b9c0d1e2f',
+    timestamp: '2023-10-24 16:15:02Z',
+    status: 'ANALYZED',
+    verdict: 'Likely Authentic',
+    confidence: 94.0,
+    size: '1.8 MB',
+    resolution: '300 DPI Scan',
+    device: 'Flatbed Scanner',
+    preview: 'https://images.unsplash.com/photo-1586281380349-632531db7ed4?w=600&auto=format&fit=crop&q=80',
+    isVideo: false,
+    route: '/metadata-provenance'
+  },
+  {
+    id: 'EV-2023-090A',
+    filename: 'voicemail_intercept.wav',
+    type: 'Audio',
+    format: 'WAV Audio (44.1kHz)',
+    sha256: 'e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0',
+    timestamp: '2023-10-25 09:12:33Z',
+    status: 'ANALYZED',
+    verdict: 'Synthetic Voice Clone',
+    confidence: 91.0,
+    size: '8.4 MB',
+    resolution: '16-bit PCM',
+    device: 'VoIP Telephony Log',
+    preview: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&auto=format&fit=crop&q=80',
+    isVideo: false,
+    route: '/audio-forensics'
+  }
+];
+
 export default function EvidencePage() {
+  const navigate = useNavigate();
+  const [evidenceList] = useState(INITIAL_EVIDENCE);
+  const [selectedItem, setSelectedItem] = useState(INITIAL_EVIDENCE[1]); // Default select video
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('ALL');
+
+  const filteredItems = evidenceList.filter((item) => {
+    const matchesSearch =
+      !searchQuery ||
+      item.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.sha256.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.verdict.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesType = typeFilter === 'ALL' || item.type === typeFilter;
+
+    return matchesSearch && matchesType;
+  });
+
   return (
-    <main className="ml-[260px] flex-1 flex flex-col h-screen relative w-[calc(100%-260px)]">
-      {/* TopNavBar (Shared Component) */}
-      <header className="bg-surface flex justify-between items-center h-14 px-gutter border-b border-outline-variant shrink-0 z-10 w-full">
-        <div className="flex items-center gap-6">
-          {/* Navigation Links / Breadcrumbs */}
-          <nav className="flex items-center gap-4 text-label-sm">
-            <a className="text-on-surface-variant font-medium hover:text-primary transition-colors" href="#">Cases</a>
-            <span className="material-symbols-outlined text-outline-variant text-[16px]">chevron_right</span>
-            <a className="text-primary font-bold border-b-2 border-primary pb-1 scale-95 transition-transform" href="#">Evidence</a>
-          </nav>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="text-label-sm text-on-surface-variant px-3 py-1 bg-surface-container-highest rounded border border-outline-variant/50">
-            Current Case: #4492
-          </div>
-          <div className="h-4 w-px bg-outline-variant" />
-          <div className="flex items-center gap-3 text-on-surface-variant">
-            <button className="hover:text-primary transition-colors"><span className="material-symbols-outlined text-[20px]">notifications</span></button>
-            <button className="hover:text-primary transition-colors"><span className="material-symbols-outlined text-[20px]">search</span></button>
-            <button className="hover:text-primary transition-colors flex items-center gap-2">
-              <span className="material-symbols-outlined text-[24px]">account_circle</span>
-              <span className="text-label-sm">Investigator</span>
-            </button>
-          </div>
-        </div>
-      </header>
-      {/* Page Content */}
+    <main className="flex-1 flex flex-col h-screen overflow-hidden bg-background">
+      {/* Page Workspace */}
       <div className="flex-1 overflow-hidden flex relative">
         {/* Main Canvas */}
-        <div className="flex-1 flex flex-col h-full overflow-y-auto p-container-margin transition-all duration-300" id="main-canvas">
-          <div className="flex justify-between items-end mb-6">
+        <div className="flex-1 flex flex-col h-full overflow-y-auto p-5 transition-all duration-300">
+          <div className="flex justify-between items-end mb-5">
             <div>
-              <h2 className="text-headline-md font-headline-md text-on-surface mb-1">Evidence Management</h2>
-              <p className="text-body-sm font-body-sm text-on-surface-variant">Upload, categorize, and analyze digital artifacts for Case #4492.</p>
+              <h2 className="text-display-lg font-display-lg text-on-surface mb-1">
+                Evidence Management
+              </h2>
+              <p className="text-body-md font-body-md text-on-surface-variant">
+                Upload, search, categorize, and launch AI deepfake forensic analysis for Case #4492.
+              </p>
             </div>
             <div className="flex gap-2">
-              <button className="px-4 py-2 border border-outline-variant rounded bg-surface-container-lowest text-on-surface text-label-md hover:bg-surface-container-low transition-colors flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">filter_list</span>
-                Filter
-              </button>
-              <button className="px-4 py-2 border border-outline-variant rounded bg-surface-container-lowest text-on-surface text-label-md hover:bg-surface-container-low transition-colors flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">download</span>
-                Export Log
+              <button
+                onClick={() => navigate('/video-forensics')}
+                className="px-3.5 py-2 bg-primary text-on-primary rounded-lg text-label-md hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm font-medium"
+              >
+                <span className="material-symbols-outlined text-[18px]">videocam</span>
+                Video Forensics Studio
               </button>
             </div>
           </div>
-          {/* Drag & Drop Area */}
-          <div className="border-2 border-dashed border-outline-variant rounded-xl p-8 mb-8 bg-surface-container-lowest flex flex-col items-center justify-center text-center cursor-pointer" id="drop-zone">
-            <span className="material-symbols-outlined text-[48px] text-outline mb-4">cloud_upload</span>
-            <h3 className="text-title-lg font-title-lg text-on-surface mb-2">Drag &amp; Drop Evidence Files Here</h3>
-            <p className="text-body-sm font-body-sm text-on-surface-variant max-w-md mx-auto mb-4">Supported formats: JPG, PNG, MP4, WAV, PDF. Maximum file size: 5GB per artifact. All uploads are automatically hashed (SHA-256) upon ingestion.</p>
-            <button className="bg-primary text-on-primary py-2 px-6 rounded text-label-md hover:bg-surface-tint transition-colors">
-              Browse Files
-            </button>
-          </div>
-          {/* Evidence Inventory */}
-          <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-[0px_4px_12px_rgba(23,32,51,0.08)] flex-1 flex flex-col overflow-hidden">
-            <div className="px-4 py-3 border-b border-outline-variant flex justify-between items-center bg-[#F6F8FB]">
-              <h3 className="text-title-lg font-title-lg text-on-surface">Evidence Inventory (24 Items)</h3>
-              <div className="relative">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline-variant text-[18px]">search</span>
-                <input className="pl-9 pr-4 py-1.5 text-body-sm font-body-sm border border-outline-variant rounded bg-surface-container-lowest focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all w-64" placeholder="Search ID, Filename, Hash..." type="text" />
-              </div>
+
+          {/* Quick Search & Filters Bar */}
+          <div className="flex items-center justify-between gap-3 mb-4 bg-surface p-3 rounded-xl border border-outline-variant">
+            <div className="relative flex-1 max-w-md">
+              <span className="material-symbols-outlined absolute left-3 top-2.5 text-on-surface-variant text-[18px]">
+                search
+              </span>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by ID, Filename, Hash, or Verdict..."
+                className="w-full pl-9 pr-4 py-1.5 text-body-sm rounded-lg bg-surface-container-low border border-outline-variant text-on-surface focus:outline-none focus:border-primary"
+              />
             </div>
+
+            {/* Type Filters */}
+            <div className="flex gap-1.5">
+              {['ALL', 'Video', 'Image', 'Audio', 'Document'].map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTypeFilter(t)}
+                  className={`px-3 py-1 rounded-lg text-label-sm font-medium transition-colors ${
+                    typeFilter === t
+                      ? 'bg-primary text-on-primary shadow-sm'
+                      : 'bg-surface-container text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  {t === 'ALL' ? 'All Types' : t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Evidence Inventory Table */}
+          <div className="bg-surface border border-outline-variant rounded-xl shadow-sm flex-1 flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+              <h3 className="text-label-md font-semibold text-on-surface">
+                Evidence Inventory ({filteredItems.length} Items)
+              </h3>
+              <span className="text-[11px] text-on-surface-variant">
+                Click any row to inspect or launch deep analysis
+              </span>
+            </div>
+
             <div className="flex-1 overflow-auto">
-              <table className="w-full text-left border-collapse min-w-[900px]">
-                <thead className="sticky top-0 bg-[#F6F8FB] z-10 border-b border-outline-variant shadow-sm">
+              <table className="w-full text-left border-collapse min-w-[850px]">
+                <thead className="sticky top-0 bg-surface-container z-10 border-b border-outline-variant">
                   <tr>
-                    <th className="py-3 px-4 text-label-sm text-on-surface-variant font-semibold">Evidence ID</th>
-                    <th className="py-3 px-4 text-label-sm text-on-surface-variant font-semibold">Filename</th>
-                    <th className="py-3 px-4 text-label-sm text-on-surface-variant font-semibold">Type</th>
-                    <th className="py-3 px-4 text-label-sm text-on-surface-variant font-semibold">SHA-256</th>
-                    <th className="py-3 px-4 text-label-sm text-on-surface-variant font-semibold">Timestamp</th>
-                    <th className="py-3 px-4 text-label-sm text-on-surface-variant font-semibold">Status</th>
-                    <th className="py-3 px-4 text-label-sm text-on-surface-variant font-semibold">Assessment</th>
+                    <th className="py-2.5 px-4 text-label-sm text-on-surface-variant font-semibold">
+                      Evidence ID
+                    </th>
+                    <th className="py-2.5 px-4 text-label-sm text-on-surface-variant font-semibold">
+                      Filename
+                    </th>
+                    <th className="py-2.5 px-4 text-label-sm text-on-surface-variant font-semibold">
+                      Type
+                    </th>
+                    <th className="py-2.5 px-4 text-label-sm text-on-surface-variant font-semibold">
+                      SHA-256 Hash
+                    </th>
+                    <th className="py-2.5 px-4 text-label-sm text-on-surface-variant font-semibold">
+                      Status
+                    </th>
+                    <th className="py-2.5 px-4 text-label-sm text-on-surface-variant font-semibold">
+                      Assessment & Action
+                    </th>
                   </tr>
                 </thead>
-                <tbody className="text-body-md font-body-md divide-y divide-outline-variant/50">
-                  {/* Row 1 (Selected) */}
-                  <tr className="evidence-row selected transition-colors" onclick="toggleSidebar(true)">
-                    <td className="py-3 px-4 font-mono text-primary">EV-2023-089A</td>
-                    <td className="py-3 px-4 text-on-surface font-medium flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[18px] text-outline">image</span>
-                      suspect_vehicle_cam2.jpg
-                    </td>
-                    <td className="py-3 px-4 text-on-surface-variant">JPEG Image</td>
-                    <td className="py-3 px-4 font-mono text-on-surface-variant text-xs">8f4e2...a1b9</td>
-                    <td className="py-3 px-4 text-on-surface-variant text-xs">2023-10-24 14:32:11Z</td>
-                    <td className="py-3 px-4">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#E0F2FE] text-[#0369A1] text-[10px] font-bold uppercase tracking-wider">
-                        <span className="material-symbols-outlined text-[12px]">done</span> Analyzed
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex flex-col gap-1 w-32">
-                        <span className="text-[11px] font-semibold text-[#EF4444]">Likely Manipulated</span>
-                        <div className="w-full bg-outline-variant/30 rounded-full h-1 overflow-hidden">
-                          <div className="confidence-bar confidence-manipulated" />
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                  {/* Row 2 */}
-                  <tr className="evidence-row transition-colors" onclick="toggleSidebar(true)">
-                    <td className="py-3 px-4 font-mono text-primary">EV-2023-089B</td>
-                    <td className="py-3 px-4 text-on-surface font-medium flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[18px] text-outline">videocam</span>
-                      alley_security_feed.mp4
-                    </td>
-                    <td className="py-3 px-4 text-on-surface-variant">H.264 Video</td>
-                    <td className="py-3 px-4 font-mono text-on-surface-variant text-xs">c3d4e...f5a6</td>
-                    <td className="py-3 px-4 text-on-surface-variant text-xs">2023-10-24 15:01:44Z</td>
-                    <td className="py-3 px-4">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] text-[10px] font-bold uppercase tracking-wider animate-pulse">
-                        <span className="material-symbols-outlined text-[12px] animate-spin">sync</span> Processing
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex flex-col gap-1 w-32">
-                        <span className="text-[11px] font-semibold text-[#F59E0B]">Analyzing...</span>
-                        <div className="w-full bg-outline-variant/30 rounded-full h-1 overflow-hidden">
-                          <div className="confidence-bar confidence-processing" />
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                  {/* Row 3 */}
-                  <tr className="evidence-row transition-colors" onclick="toggleSidebar(true)">
-                    <td className="py-3 px-4 font-mono text-primary">EV-2023-089C</td>
-                    <td className="py-3 px-4 text-on-surface font-medium flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[18px] text-outline">description</span>
-                      ransom_note_scanned.pdf
-                    </td>
-                    <td className="py-3 px-4 text-on-surface-variant">PDF Document</td>
-                    <td className="py-3 px-4 font-mono text-on-surface-variant text-xs">7a8b9...c0d1</td>
-                    <td className="py-3 px-4 text-on-surface-variant text-xs">2023-10-24 16:15:02Z</td>
-                    <td className="py-3 px-4">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#E0F2FE] text-[#0369A1] text-[10px] font-bold uppercase tracking-wider">
-                        <span className="material-symbols-outlined text-[12px]">done</span> Analyzed
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex flex-col gap-1 w-32">
-                        <span className="text-[11px] font-semibold text-[#10B981]">Likely Authentic</span>
-                        <div className="w-full bg-outline-variant/30 rounded-full h-1 overflow-hidden">
-                          <div className="confidence-bar confidence-authentic" />
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                  {/* Row 4 */}
-                  <tr className="evidence-row transition-colors" onclick="toggleSidebar(true)">
-                    <td className="py-3 px-4 font-mono text-primary">EV-2023-090A</td>
-                    <td className="py-3 px-4 text-on-surface font-medium flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[18px] text-outline">audio_file</span>
-                      voicemail_intercept.wav
-                    </td>
-                    <td className="py-3 px-4 text-on-surface-variant">WAV Audio</td>
-                    <td className="py-3 px-4 font-mono text-on-surface-variant text-xs">e5f6g...h7i8</td>
-                    <td className="py-3 px-4 text-on-surface-variant text-xs">2023-10-25 09:12:33Z</td>
-                    <td className="py-3 px-4">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">
-                        <span className="material-symbols-outlined text-[12px]">cloud_done</span> Uploaded
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-[11px] font-semibold text-on-surface-variant">Pending Analysis</span>
-                    </td>
-                  </tr>
+                <tbody className="divide-y divide-outline-variant/40">
+                  {filteredItems.map((item) => {
+                    const isSelected = selectedItem?.id === item.id;
+                    const isFake = item.verdict.toLowerCase().includes('manipulated') || item.verdict.toLowerCase().includes('deepfake');
+
+                    return (
+                      <tr
+                        key={item.id}
+                        onClick={() => {
+                          setSelectedItem(item);
+                          setSidebarOpen(true);
+                        }}
+                        className={`cursor-pointer transition-colors ${
+                          isSelected
+                            ? 'bg-primary/10 font-medium'
+                            : 'hover:bg-surface-container-low'
+                        }`}
+                      >
+                        <td className="py-3 px-4 font-mono text-primary text-body-sm">
+                          {item.id}
+                        </td>
+                        <td className="py-3 px-4 text-on-surface text-body-sm font-medium flex items-center gap-2">
+                          <span
+                            className={`material-symbols-outlined text-[18px] ${
+                              item.isVideo ? 'text-primary' : 'text-on-surface-variant'
+                            }`}
+                          >
+                            {item.isVideo
+                              ? 'videocam'
+                              : item.type === 'Image'
+                              ? 'image'
+                              : item.type === 'Audio'
+                              ? 'audiotrack'
+                              : 'description'}
+                          </span>
+                          {item.filename}
+                        </td>
+                        <td className="py-3 px-4 text-on-surface-variant text-body-sm">
+                          {item.format}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-on-surface-variant text-xs">
+                          {item.sha256.substring(0, 12)}...
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">
+                            <span className="material-symbols-outlined text-[12px]">done</span>{' '}
+                            {item.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <span
+                              className={`text-[11px] font-bold ${
+                                isFake ? 'text-error' : 'text-emerald-400'
+                              }`}
+                            >
+                              {item.verdict}
+                            </span>
+
+                            {item.isVideo && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/video-forensics?videoId=${item.id}`);
+                                }}
+                                className="px-2.5 py-1 bg-primary/20 hover:bg-primary text-primary hover:text-on-primary rounded text-label-sm font-medium transition-colors flex items-center gap-1 shrink-0"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">
+                                  analytics
+                                </span>
+                                Analyze
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
         </div>
-        {/* Detailed Sidebar (Hidden by default, shown for demo) */}
-        <div className="w-[400px] border-l border-outline-variant bg-surface-container-lowest h-full flex flex-col shrink-0 absolute right-0 top-0 z-20 shadow-[-4px_0_24px_rgba(23,32,51,0.05)]" id="details-sidebar">
-          {/* Sidebar Header */}
-          <div className="px-6 py-4 border-b border-outline-variant flex justify-between items-center bg-[#F6F8FB]">
-            <div>
-              <h3 className="text-title-lg font-title-lg text-on-surface">Artifact Details</h3>
-              <span className="font-mono text-primary text-xs">EV-2023-089A</span>
-            </div>
-            <button className="p-1 text-on-surface-variant hover:bg-surface-container rounded transition-colors" onclick="toggleSidebar(false)">
-              <span className="material-symbols-outlined">close</span>
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {/* Preview */}
-            <div className="rounded border border-outline-variant overflow-hidden bg-surface-container-low aspect-video relative flex items-center justify-center">
-              <img className="object-cover w-full h-full opacity-80 mix-blend-multiply" data-alt="A clinical, high-resolution forensic analysis view of a suspect vehicle image. The image is overlaid with a subtle grid and bounding boxes highlighting potential manipulated areas around the license plate. The overall aesthetic is serious, technical, and light-mode compatible, emphasizing data clarity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCdN6e3Yw61njZAgPJnFDd8e4ISl3JBiedkz6IoZIbsENvxgsUSQAoCFYG6cmhnat3wrNi_fIga9p9ZuuQNQ7EekonlVJnbQVQmeKZWuvv56zhKKpZEBGZHk-IJqcfO_rpKVzOX3qkuyxQxlaHmMuCuXf_8Sx5U6dpKRZdORSkHpvOdNkwUH8uwke1N3u1CGzXaZaJQBJPg3W9c6x6xi1bLJ7tGCe-jie5ain0dH6tZ3Oawka_c6lw" />
-              <div className="absolute inset-0 border-4 border-error/20 pointer-events-none" />
-              <span className="absolute top-2 left-2 bg-error text-on-error text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wide shadow-sm">Manipulation Detected</span>
-            </div>
-            {/* Actions */}
-            <div className="flex gap-2">
-              <button className="flex-1 bg-secondary text-on-secondary py-2 px-3 rounded text-label-md hover:bg-secondary/90 transition-colors flex items-center justify-center gap-2">
-                <span className="material-symbols-outlined text-[16px]">psychology</span>
-                Deep Analysis
-              </button>
-              <button className="flex-1 border border-outline-variant bg-surface-container-lowest text-on-surface py-2 px-3 rounded text-label-md hover:bg-surface-container-low transition-colors flex items-center justify-center gap-2">
-                <span className="material-symbols-outlined text-[16px]">visibility</span>
-                View Full
+
+        {/* Detailed Artifact Sidebar */}
+        {sidebarOpen && selectedItem && (
+          <aside className="w-[380px] border-l border-outline-variant bg-surface h-full flex flex-col shrink-0 z-20 shadow-xl animate-fadeIn">
+            {/* Sidebar Header */}
+            <div className="px-4 py-3.5 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+              <div>
+                <h3 className="text-label-md font-semibold text-on-surface">Artifact Details</h3>
+                <span className="font-mono text-primary text-xs">{selectedItem.id}</span>
+              </div>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="p-1 text-on-surface-variant hover:bg-surface-container rounded-lg transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
-            {/* Metadata List */}
-            <div>
-              <h4 className="text-label-sm text-on-surface-variant uppercase tracking-wider mb-3 pb-1 border-b border-outline-variant/50">Technical Metadata</h4>
-              <dl className="space-y-2 text-body-sm font-body-sm">
-                <div className="flex justify-between">
-                  <dt className="text-on-surface-variant">Filename</dt>
-                  <dd className="text-on-surface font-medium text-right break-all ml-4">suspect_vehicle_cam2.jpg</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-on-surface-variant">Size</dt>
-                  <dd className="text-on-surface font-medium">4.2 MB</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-on-surface-variant">Resolution</dt>
-                  <dd className="text-on-surface font-medium">3840 x 2160</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-on-surface-variant">Camera Model</dt>
-                  <dd className="text-on-surface font-medium">Sony A7S III (EXIF)</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-on-surface-variant">Color Space</dt>
-                  <dd className="text-on-surface font-medium">sRGB</dd>
-                </div>
-                <div className="flex justify-between pt-2">
-                  <dt className="text-on-surface-variant">MD5 Hash</dt>
-                  <dd className="font-mono text-[11px] text-on-surface">d41d8cd98f00b204e9800998ecf8427e</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-on-surface-variant">SHA-256</dt>
-                  <dd className="font-mono text-[11px] text-on-surface w-40 text-right truncate" title="8f4e2...a1b9">8f4e27f6a9c8d3b2e1f4a7c8d9e0b1f2</dd>
-                </div>
-              </dl>
-            </div>
-            {/* Chain of Custody */}
-            <div>
-              <h4 className="text-label-sm text-on-surface-variant uppercase tracking-wider mb-3 pb-1 border-b border-outline-variant/50">Chain of Custody</h4>
-              <div className="relative border-l-2 border-outline-variant/50 ml-2 space-y-4 py-2">
-                <div className="relative pl-6">
-                  <span className="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-primary ring-4 ring-surface-container-lowest" />
-                  <div className="text-label-md text-on-surface">Automated Analysis Completed</div>
-                  <div className="text-body-sm font-body-sm text-on-surface-variant">System (Model v2.4.1)</div>
-                  <div className="text-xs text-on-surface-variant/70 mt-1">2023-10-24 14:35:12Z</div>
-                </div>
-                <div className="relative pl-6">
-                  <span className="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-surface-variant border-2 border-outline-variant ring-4 ring-surface-container-lowest" />
-                  <div className="text-label-md text-on-surface">Analysis Triggered</div>
-                  <div className="text-body-sm font-body-sm text-on-surface-variant">Investigator (ID: J.Doe)</div>
-                  <div className="text-xs text-on-surface-variant/70 mt-1">2023-10-24 14:32:15Z</div>
-                </div>
-                <div className="relative pl-6">
-                  <span className="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-surface-variant border-2 border-outline-variant ring-4 ring-surface-container-lowest" />
-                  <div className="text-label-md text-on-surface">Evidence Uploaded</div>
-                  <div className="text-body-sm font-body-sm text-on-surface-variant">Investigator (ID: J.Doe)</div>
-                  <div className="text-xs text-on-surface-variant/70 mt-1">2023-10-24 14:32:11Z</div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Preview Thumbnail */}
+              <div className="rounded-xl border border-outline-variant overflow-hidden bg-black aspect-video relative flex items-center justify-center shadow-inner">
+                <img
+                  src={selectedItem.preview}
+                  alt={selectedItem.filename}
+                  className="object-cover w-full h-full opacity-85"
+                />
+                <span
+                  className={`absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide shadow ${
+                    selectedItem.verdict.toLowerCase().includes('manipulated') ||
+                    selectedItem.verdict.toLowerCase().includes('deepfake')
+                      ? 'bg-error text-white'
+                      : 'bg-emerald-600 text-white'
+                  }`}
+                >
+                  {selectedItem.verdict}
+                </span>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => navigate(selectedItem.route)}
+                  className="flex-1 bg-primary text-on-primary py-2 px-3 rounded-lg text-label-md hover:bg-primary/90 transition-colors flex items-center justify-center gap-1.5 shadow font-medium"
+                >
+                  <span className="material-symbols-outlined text-[18px]">psychology</span>
+                  Launch Forensic Studio
+                </button>
+              </div>
+
+              {/* Technical Metadata */}
+              <div className="bg-surface-container-low p-3.5 rounded-xl border border-outline-variant">
+                <h4 className="text-label-sm text-on-surface-variant uppercase tracking-wider mb-2 font-semibold">
+                  Technical Metadata
+                </h4>
+                <dl className="space-y-1.5 text-body-sm font-mono text-[12px]">
+                  <div className="flex justify-between">
+                    <dt className="text-on-surface-variant font-sans">Filename</dt>
+                    <dd className="text-on-surface truncate ml-2 max-w-[200px]" title={selectedItem.filename}>
+                      {selectedItem.filename}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-on-surface-variant font-sans">Size</dt>
+                    <dd className="text-on-surface">{selectedItem.size}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-on-surface-variant font-sans">Resolution</dt>
+                    <dd className="text-on-surface">{selectedItem.resolution}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-on-surface-variant font-sans">Device / Source</dt>
+                    <dd className="text-on-surface">{selectedItem.device}</dd>
+                  </div>
+                  <div className="flex justify-between pt-1 border-t border-outline-variant/40">
+                    <dt className="text-on-surface-variant font-sans">SHA-256</dt>
+                    <dd className="text-primary truncate ml-2 max-w-[180px]" title={selectedItem.sha256}>
+                      {selectedItem.sha256}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+
+              {/* Chain of Custody */}
+              <div className="bg-surface-container-low p-3.5 rounded-xl border border-outline-variant">
+                <h4 className="text-label-sm text-on-surface-variant uppercase tracking-wider mb-2.5 font-semibold">
+                  Chain of Custody
+                </h4>
+                <div className="relative border-l-2 border-primary/40 ml-2 space-y-3.5 py-1">
+                  <div className="relative pl-4">
+                    <span className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-primary" />
+                    <div className="text-label-sm font-semibold text-on-surface">
+                      Deepfake Neural Inspection Completed
+                    </div>
+                    <div className="text-[11px] text-on-surface-variant">
+                      ResNeXt-50 + LSTM Sequence Engine
+                    </div>
+                    <div className="text-[10px] text-on-surface-variant/70 mt-0.5">
+                      {selectedItem.timestamp}
+                    </div>
+                  </div>
+                  <div className="relative pl-4">
+                    <span className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-outline" />
+                    <div className="text-label-sm font-semibold text-on-surface">
+                      Cryptographic Evidence Ingestion
+                    </div>
+                    <div className="text-[11px] text-on-surface-variant">
+                      SHA-256 Checksum Computed
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+          </aside>
+        )}
       </div>
     </main>
   );
 }
-
