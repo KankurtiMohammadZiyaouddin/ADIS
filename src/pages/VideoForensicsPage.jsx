@@ -451,8 +451,13 @@ export default function VideoForensicsPage() {
                   className="max-h-full max-w-full object-contain"
                   playsInline
                   muted={isMuted}
-                  crossOrigin="anonymous"
                   onClick={togglePlay}
+                  onError={() => {
+                    // Sample video failed (CORS / network) – show poster and allow controls to work
+                    if (videoRef.current) {
+                      videoRef.current.poster = selectedVideo.fallbackThumbnail || '';
+                    }
+                  }}
                 />
 
                 {/* Dynamic Facial Mesh & Landmark Tracking Overlay Canvas */}
