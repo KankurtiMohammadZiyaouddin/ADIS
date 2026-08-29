@@ -4,7 +4,15 @@ export default function AudioForensicsPage() {
   const [result, setResult] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState(null);
+  const [hasUploaded, setHasUploaded] = useState(false);
   const fileInputRef = useRef(null);
+
+  const handleReset = () => {
+    setResult(null);
+    setError(null);
+    setHasUploaded(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
   const formatSize = (bytes) => {
     if (!bytes) return '0 Bytes';
     const k = 1024;
@@ -56,12 +64,24 @@ export default function AudioForensicsPage() {
         body: formData,
       });
 
-      const data = await response.json();
+      // Safely parse JSON — backend may return empty body on 502/503/crash
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error(
+          response.status === 0 || !response.status
+            ? 'Cannot reach the analysis backend. Make sure the backend server is running on port 8000.'
+            : `Server returned ${response.status} with no valid response body. The backend may have crashed.`
+        );
+      }
+
       if (!response.ok) {
-        throw new Error(data.error?.message || `Error ${response.status}: ${response.statusText}`);
+        throw new Error(data?.error?.message || `Error ${response.status}: ${response.statusText}`);
       }
 
       setResult(data);
+      setHasUploaded(true);
     } catch (err) {
       console.error(err);
       setError(err.message || 'Failed to complete audio forensic analysis.');
@@ -121,15 +141,19 @@ independent proof of media authenticity.
   };
 
   const isFake = result ? result.analysis.classification === 'FAKE' : false;
-  const confidencePercent = result ? Math.round(result.analysis.confidence * 100) : 92;
+  const confidencePercent = result ? Math.round(result.analysis.confidence * 100) : 0;
   const syntheticProb = result 
     ? (isFake ? result.analysis.confidence : 1 - result.analysis.confidence)
-    : 0.92;
-  const syntheticPercent = result ? Math.round(syntheticProb * 100) : 92;
+    : 0;
+  const syntheticPercent = result ? Math.round(syntheticProb * 100) : 0;
+
+  // True only after a real upload + result
+  const showAnomalyUI = hasUploaded && result && isFake;
+  const showRealUI    = hasUploaded && result && !isFake;
 
   const radius = 45;
   const circumference = 2 * Math.PI * radius; // ~282.74
-  const strokeOffset = result ? (circumference - (syntheticProb * circumference)) : 22;
+  const strokeOffset = result ? (circumference - (syntheticProb * circumference)) : circumference;
 
   return (
     <main className="flex-1 p-spacious p-container-margin overflow-y-auto">
@@ -158,6 +182,14 @@ independent proof of media authenticity.
           </p>
         </div>
         <div className="flex gap-2">
+          {result && (
+            <button 
+              className="px-4 py-2 bg-surface text-on-surface-variant border border-outline-variant rounded hover:bg-surface-container-highest text-label-md transition-colors flex items-center gap-2"
+              onClick={handleReset}
+            >
+              <span className="material-symbols-outlined text-[18px]">refresh</span> New Investigation
+            </button>
+          )}
           <button 
             className="px-4 py-2 bg-surface text-primary border border-outline-variant rounded hover:bg-surface-container-highest text-label-md transition-colors flex items-center gap-2"
             onClick={handleExportReport}
@@ -209,7 +241,7 @@ independent proof of media authenticity.
               <div className="w-full h-24 flex items-center px-4 justify-around" id="waveform-container">
                 {Array.from({ length: 60 }).map((_, idx) => {
                   const baseHeight = Math.sin(idx * 0.2) * 20 + 35;
-                  const isAnomalyRange = (result ? isFake : true) && idx > 24 && idx < 36;
+                  const isAnomalyRange = showAnomalyUI && idx > 24 && idx < 36;
                   const noise = Math.random() * 10;
                   const height = isAnomalyRange ? Math.min(90, baseHeight + 30 + noise) : Math.max(10, baseHeight + noise);
                   return (
@@ -223,16 +255,24 @@ independent proof of media authenticity.
                   );
                 })}
               </div>
-              {/* Scrubber (visible if synthetic/deepfake is shown) */}
-              {(result ? isFake : true) && (
+              {/* Scrubber — only if real analysis returned FAKE */}
+              {showAnomalyUI && (
                 <div className="absolute top-0 bottom-0 left-[45%] w-px bg-error z-10 flex flex-col items-center group cursor-ew-resize">
                   <div className="w-2 h-2 bg-error rounded-full -mt-1" />
                   <div className="absolute -top-6 bg-surface-container-highest text-on-surface text-label-sm px-1 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">00:00:55</div>
                 </div>
               )}
-              {/* Highlight Region (Anomaly) */}
-              {(result ? isFake : true) && (
+              {/* Highlight Region — only if real analysis returned FAKE */}
+              {showAnomalyUI && (
                 <div className="absolute top-0 bottom-0 left-[40%] w-[15%] bg-error/10 border-x border-error/50 z-0" />
+              )}
+              {/* Idle state — before any upload */}
+              {!hasUploaded && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <span className="text-on-surface-variant text-body-sm bg-surface-container-lowest px-3 py-1.5 rounded border border-outline-variant">
+                    Upload an audio file to run waveform analysis
+                  </span>
+                </div>
               )}
             </div>
           </div>
@@ -250,7 +290,7 @@ independent proof of media authenticity.
               {/* Simulated Heatmap Texture (Using CSS pattern instead of image) */}
               <div className="absolute inset-0 opacity-40 mix-blend-overlay" style={{backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.1) 2px, rgba(255,255,255,0.1) 4px)', backgroundSize: '100% 4px'}} />
               {/* Specific Frequency Anomaly Highlight */}
-              {(result ? isFake : true) && (
+              {showAnomalyUI && (
                 <div className="absolute top-[30%] left-[40%] w-[15%] h-[20%] border border-error bg-error/20 rounded-sm pointer-events-none z-10">
                   <span className="absolute -top-5 right-0 text-error text-label-sm bg-surface-container-lowest px-1 rounded border border-error">Phase discontinuity</span>
                 </div>
@@ -276,7 +316,9 @@ independent proof of media authenticity.
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                 <circle className="stroke-surface-container-highest" cx={50} cy={50} fill="none" r={45} strokeWidth={8} />
                 <circle 
-                  className={`transition-all duration-500 ${isFake ? 'stroke-error' : 'stroke-success'}`} 
+                  className={`transition-all duration-500 ${
+                    !hasUploaded ? 'stroke-outline' : isFake ? 'stroke-error' : 'stroke-success'
+                  }`} 
                   cx={50} 
                   cy={50} 
                   fill="none" 
@@ -288,12 +330,21 @@ independent proof of media authenticity.
                 />
               </svg>
               <div className="absolute flex flex-col items-center">
-                <span className={`text-display-lg font-display-lg ${isFake ? 'text-error' : 'text-success'}`}>
-                  {syntheticPercent}%
-                </span>
-                <span className={`text-[11px] ${isFake ? 'text-error' : 'text-success'} font-semibold uppercase tracking-wider`}>
-                  {result ? (isFake ? 'PREDICTION: FAKE' : 'PREDICTION: REAL') : 'HIGH CONFIDENCE'}
-                </span>
+                {!hasUploaded ? (
+                  <>
+                    <span className="text-display-lg font-display-lg text-on-surface-variant">--</span>
+                    <span className="text-[11px] text-on-surface-variant font-semibold uppercase tracking-wider">AWAITING FILE</span>
+                  </>
+                ) : (
+                  <>
+                    <span className={`text-display-lg font-display-lg ${isFake ? 'text-error' : 'text-success'}`}>
+                      {syntheticPercent}%
+                    </span>
+                    <span className={`text-[11px] ${isFake ? 'text-error' : 'text-success'} font-semibold uppercase tracking-wider`}>
+                      {isFake ? 'PREDICTION: FAKE' : 'PREDICTION: REAL'}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
             <p className="text-body-sm font-body-sm text-on-surface-variant text-center mt-2">
@@ -399,7 +450,13 @@ independent proof of media authenticity.
             </tr>
           </thead>
           <tbody className="text-body-sm font-body-sm text-on-surface">
-            {(result ? isFake : true) ? (
+            {!hasUploaded ? (
+              <tr>
+                <td colSpan={5} className="py-8 text-center text-on-surface-variant text-body-sm">
+                  No audio file analyzed yet. Upload a file using &ldquo;Run AI Deep Scan&rdquo; above.
+                </td>
+              </tr>
+            ) : showAnomalyUI ? (
               <>
                 <tr className="border-b border-outline-variant hover:bg-primary/5 transition-colors">
                   <td className="py-3 px-4 font-mono text-on-surface-variant">00:00:10 - 00:00:45</td>
@@ -450,7 +507,7 @@ independent proof of media authenticity.
                   </td>
                 </tr>
               </>
-            ) : (
+            ) : showRealUI ? (
               <tr className="hover:bg-primary/5 transition-colors">
                 <td className="py-3 px-4 font-mono text-on-surface-variant">
                   00:00:00 - {result ? formatDuration(result.evidence.duration_seconds) : 'End'}
@@ -469,7 +526,7 @@ independent proof of media authenticity.
                   <button className="text-on-surface-variant hover:text-success"><span className="material-symbols-outlined text-[18px]">play_arrow</span></button>
                 </td>
               </tr>
-            )}
+            ) : null}
           </tbody>
         </table>
       </div>
