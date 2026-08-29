@@ -15,8 +15,8 @@ import database as db
 
 app = FastAPI(
     title="ADIS Forensic Suite API",
-    version="2.0.0",
-    description="Multimodal Forensic Analysis API with SQLite Persistence & Temporal Video Engine",
+    version="2.1.0",
+    description="Modular Multimodal Forensic Analysis API with Sub-Detectors, ELA Indicators, and Forensic Fusion",
 )
 
 
@@ -37,8 +37,8 @@ def startup_event():
 @app.get("/")
 def root():
     return {
-        "message": "ADIS backend is running with SQLite persistence",
-        "service": "ADIS Forensic Suite API v2.0",
+        "message": "ADIS backend is running with Modular Sub-Detector Architecture",
+        "service": "ADIS Forensic Suite API v2.1",
         "modalities": ["image", "audio", "video"],
         "database": "SQLite (adis_forensics.db)",
     }
@@ -50,9 +50,9 @@ def health():
         "status": "healthy",
         "database": "connected",
         "services": {
-            "image": "ready",
-            "audio": "ready",
-            "video": "ready (temporal engine 2.0)",
+            "image": "ready (EfficientNet + ELA Analyzer)",
+            "audio": "ready (YAMNet Sub-Detector)",
+            "video": "ready (Frame-Based Sampler)",
         }
     }
 
@@ -87,14 +87,19 @@ def make_standard_envelope(media_type: str, filename: str, result: dict, extra_e
         "file_size_bytes": result.get("file_size_bytes", 0),
         "classification": result.get("classification", "INCONCLUSIVE"),
         "confidence": result.get("confidence", 0.0),
+        "detector_agreement": result.get("detector_agreement", True),
+        "disagreement_warning": result.get("disagreement_warning"),
         "model": {
             "name": model_name,
             "version": model_version
         },
+        "detectors": result.get("detectors", []),
+        "forensic_indicators": result.get("forensic_indicators", []),
         "processing": {
             "processing_time_ms": proc_time
         },
         "timestamp": now_iso,
+        "disclaimer": result.get("disclaimer", "Forensic outputs are probabilistic model classifications and do not constitute legal proof."),
         "evidence": {
             "filename": filename,
             "file_size_bytes": result.get("file_size_bytes", 0),
@@ -372,9 +377,6 @@ async def audio_analyze(audio_file: UploadFile = File(...)):
             "sample_rate": result.get("sample_rate", 0),
             "channels": result.get("channels", 0)
         }
-        result["model"] = "Deepfake-YamNet"
-        result["model_version"] = "1.0.0"
-
         return make_standard_envelope("audio", audio_file.filename, result, extra_evidence)
 
     except ValueError as val_err:
@@ -411,7 +413,7 @@ async def audio_analyze(audio_file: UploadFile = File(...)):
 
 
 # ---------------------------------------------------------------------------
-# 3. TEMPORAL VIDEO FORENSIC ENDPOINT
+# 3. VIDEO FORENSIC ENDPOINT
 # ---------------------------------------------------------------------------
 @app.post("/api/video/analyze")
 async def video_analyze(video_file: UploadFile = File(...)):
@@ -472,7 +474,8 @@ async def video_analyze(video_file: UploadFile = File(...)):
             "frame_count": result.get("frame_count", 0),
         }
         extra_analysis = {
-            "methodology": "3D Temporal Sequence Sampling + Optical Flow Delta",
+            "methodology": result.get("aggregation_method", "Frame-Sampled Spatial Majority Vote"),
+            "is_true_temporal_model": False,
             "frames_analyzed": result.get("frame_count", 0),
             "frames_fake": result.get("frames_fake", 0),
             "frames_real": result.get("frames_real", 0),
@@ -480,7 +483,7 @@ async def video_analyze(video_file: UploadFile = File(...)):
         }
         extra_forensic = {
             "frame_results": result.get("frame_results", []),
-            "temporal_flicker_score": result.get("temporal_analysis", {}).get("temporal_flicker_score", 0.0)
+            "limitations_note": result.get("limitations_note", "Frame-sampled spatial detector.")
         }
 
         return make_standard_envelope("video", video_file.filename, result, extra_evidence, extra_analysis, extra_forensic)

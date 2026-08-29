@@ -27,7 +27,7 @@ export default function ImageForensicsPage() {
     setIsAnalyzing(true);
     setError(null);
     setAnalysisProgress(10);
-    setAnalysisStep('Initializing neural pipeline...');
+    setAnalysisStep('Initializing modular forensic pipeline...');
 
     try {
       const res = await analyzeImageFile(selectedFile, (pct, step) => {
@@ -36,7 +36,6 @@ export default function ImageForensicsPage() {
       });
 
       setResult(res);
-      // Save result to global store for Dashboard & Reports & Cross-Modal
       saveAnalysisResult(
         'image',
         res.originalName || selectedFile.name,
@@ -70,7 +69,18 @@ export default function ImageForensicsPage() {
 
       {/* Center Canvas: Image Comparison */}
       <div className="flex-1 flex flex-col gap-gutter min-w-0">
-        {/* Banner for Simulation Mode */}
+        {/* Detector Disagreement / Warning Banner */}
+        {result?.disagreementWarning && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-amber-400 text-body-sm flex items-start gap-2.5">
+            <span className="material-symbols-outlined text-[20px] text-amber-400 shrink-0 mt-0.5">warning</span>
+            <div>
+              <strong className="block text-label-md">DETECTOR DISAGREEMENT DETECTED</strong>
+              <p className="mt-0.5">{result.disagreementWarning}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Simulation Banner */}
         {result?._simulated && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-amber-400 text-body-sm flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px]">warning</span>
@@ -143,41 +153,70 @@ export default function ImageForensicsPage() {
           </div>
         </div>
 
-        {/* Bottom Panel: Metadata Summary */}
-        <div className="h-44 bg-surface-container-lowest border border-outline-variant rounded-lg flex flex-col overflow-hidden shrink-0">
+        {/* Bottom Panel: Metadata Summary & ELA Forensic Indicators */}
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-lg flex flex-col overflow-hidden shrink-0">
           <div className="h-8 border-b border-outline-variant bg-surface-container flex items-center px-4 text-label-md text-on-surface">
-            Image Forensic Metadata Summary
+            Forensic Indicators &amp; Compression Anomaly Signals
           </div>
-          <div className="p-3 overflow-y-auto">
-            <table className="w-full text-body-sm font-body-sm text-left">
-              <tbody>
-                <tr className="border-b border-surface-variant">
-                  <th className="py-1 text-on-surface-variant font-medium w-1/3">Filename</th>
-                  <td className="py-1 text-on-surface">{selectedFile?.name || 'No file selected'}</td>
-                </tr>
-                <tr className="border-b border-surface-variant">
-                  <th className="py-1 text-on-surface-variant font-medium">Resolution</th>
-                  <td className="py-1 text-on-surface">{result?.resolution || 'N/A'}</td>
-                </tr>
-                <tr className="border-b border-surface-variant">
-                  <th className="py-1 text-on-surface-variant font-medium">SHA-256 Hash</th>
-                  <td className="py-1 font-mono text-xs text-on-surface truncate" title={result?.sha256}>
-                    {result?.sha256 || 'Calculated during scan'}
-                  </td>
-                </tr>
-                <tr>
-                  <th className="py-1 text-on-surface-variant font-medium">Format / Model</th>
-                  <td className="py-1 text-on-surface">
-                    {result ? `${result.format} (${result.modelUsed})` : 'N/A'}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <h4 className="text-label-sm font-semibold text-on-surface-variant uppercase mb-2">Evidence Metadata</h4>
+              <table className="w-full text-body-sm font-body-sm text-left">
+                <tbody>
+                  <tr className="border-b border-surface-variant">
+                    <th className="py-1 text-on-surface-variant font-medium w-1/3">Filename</th>
+                    <td className="py-1 text-on-surface">{selectedFile?.name || 'No file selected'}</td>
+                  </tr>
+                  <tr className="border-b border-surface-variant">
+                    <th className="py-1 text-on-surface-variant font-medium">Resolution</th>
+                    <td className="py-1 text-on-surface">{result?.resolution || 'N/A'}</td>
+                  </tr>
+                  <tr className="border-b border-surface-variant">
+                    <th className="py-1 text-on-surface-variant font-medium">SHA-256 Hash</th>
+                    <td className="py-1 font-mono text-xs text-on-surface truncate" title={result?.sha256}>
+                      {result?.sha256 || 'Calculated during scan'}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th className="py-1 text-on-surface-variant font-medium">Format / Model</th>
+                    <td className="py-1 text-on-surface">
+                      {result ? `${result.format} (${result.modelUsed})` : 'N/A'}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <h4 className="text-label-sm font-semibold text-on-surface-variant uppercase mb-2">Error Level Analysis (ELA) Indicator</h4>
+              {result?.forensicIndicators && result.forensicIndicators.length > 0 ? (
+                result.forensicIndicators.map((ind, idx) => (
+                  <div key={idx} className="bg-surface p-3 border border-outline-variant rounded space-y-1.5">
+                    <div className="flex justify-between items-center text-body-sm">
+                      <span className="font-semibold text-on-surface">{ind.indicator_name}</span>
+                      <span className={`px-2 py-0.5 rounded text-label-sm font-semibold ${
+                        ind.compression_anomaly === 'HIGH' ? 'bg-error/20 text-error' : ind.compression_anomaly === 'MODERATE' ? 'bg-amber-500/20 text-amber-400' : 'bg-primary/20 text-primary'
+                      }`}>
+                        Anomaly: {ind.compression_anomaly || 'LOW'}
+                      </span>
+                    </div>
+                    <div className="text-body-xs text-on-surface-variant space-y-1">
+                      <p>Variance Delta: <span className="font-mono">{ind.compression_variance || 0}</span> | ELA Score: <span className="font-mono">{ind.ela_anomaly_score || 0}</span></p>
+                      <p className="text-amber-400/90 text-xs italic">Notice: {ind.notice || 'Non-definitive compression indicator.'}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="p-3 bg-surface border border-outline-variant rounded text-body-sm text-on-surface-variant">
+                  Run forensic scan to compute ELA compression anomaly metrics.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Right Sidebar: Analysis Panel */}
+      {/* Right Sidebar: Modular Analysis Panel */}
       <div className="w-full xl:w-80 flex flex-col gap-gutter shrink-0">
         {/* Action Button Card */}
         <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-4">
@@ -218,13 +257,13 @@ export default function ImageForensicsPage() {
           )}
         </div>
 
-        {/* Probability Card */}
+        {/* Primary Assessment Card */}
         <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-4">
-          <h3 className="text-headline-sm font-headline-sm text-on-surface mb-4">Forensic Assessment</h3>
+          <h3 className="text-headline-sm font-headline-sm text-on-surface mb-4">Primary Assessment</h3>
 
           <div className="mb-6">
             <div className="flex justify-between items-end mb-1">
-              <span className="text-label-md text-on-surface-variant">Verdict</span>
+              <span className="text-label-md text-on-surface-variant">Classification</span>
               <span className={`text-title-lg font-title-lg ${result?.verdict === 'FAKE' ? 'text-error' : result?.verdict === 'REAL' ? 'text-primary' : 'text-on-surface'}`}>
                 {result ? result.verdict : 'PENDING'}
               </span>
@@ -256,18 +295,29 @@ export default function ImageForensicsPage() {
             </div>
           </div>
 
-          {result && (
+          {/* Sub-Detectors Breakdown */}
+          {result?.detectors && result.detectors.length > 0 && (
             <div className="mt-4 pt-3 border-t border-outline-variant space-y-2">
-              <h4 className="text-label-sm text-on-surface-variant uppercase tracking-wider">Analysis Notes</h4>
-              <p className="text-body-sm text-on-surface-variant leading-relaxed">
-                {result.verdict === 'FAKE'
-                  ? 'Model detected spatial and structural synthesis patterns consistent with deepfake generation.'
-                  : result.verdict === 'REAL'
-                  ? 'Model verified natural camera sensor characteristics and uniform spatial features.'
-                  : 'Inconclusive score. Manual examination suggested.'}
-              </p>
+              <h4 className="text-label-sm text-on-surface-variant uppercase tracking-wider">Sub-Detectors Breakdown</h4>
+              <div className="space-y-1.5">
+                {result.detectors.map((det, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-body-xs bg-surface p-2 rounded border border-outline-variant">
+                    <span className="font-medium text-on-surface">{det.detector_name}</span>
+                    <span className={`font-mono font-semibold ${det.classification === 'FAKE' ? 'text-error' : det.classification === 'REAL' ? 'text-primary' : 'text-on-surface'}`}>
+                      {det.classification} ({Math.round(det.confidence * 100)}%)
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
+
+          {/* Legal Disclaimer Notice */}
+          <div className="mt-4 pt-3 border-t border-outline-variant">
+            <p className="text-label-xs text-on-surface-variant/80 italic leading-snug">
+              {result?.disclaimer || 'Model outputs are probabilistic indicators. Results must be reviewed by a certified forensic examiner before legal submission.'}
+            </p>
+          </div>
         </div>
       </div>
     </main>

@@ -510,6 +510,11 @@ export async function analyzeImageFile(file, progressCallback) {
         format: data.evidence?.format || file.type || 'IMAGE',
         colorMode: data.evidence?.color_mode || 'RGB',
         processingTimeMs: data.processing?.processing_time_ms || 0,
+        detectors: data.detectors || [],
+        forensicIndicators: data.forensic_indicators || [],
+        detectorAgreement: data.detector_agreement ?? true,
+        disagreementWarning: data.disagreement_warning || null,
+        disclaimer: data.disclaimer || 'Forensic outputs are probabilistic model classifications and do not constitute legal proof.',
         _simulated: false,
       };
     }

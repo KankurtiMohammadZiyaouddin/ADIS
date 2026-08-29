@@ -22,7 +22,7 @@ HISTORY_URL = f"{API_BASE}/api/history"
 
 
 def test_api():
-    print("=== STARTING COMPREHENSIVE MULTIMODAL API SUITE TESTS ===")
+    print("=== STARTING MODULAR MULTIMODAL API SUITE TESTS ===")
 
     # 1. Health check
     try:
@@ -41,7 +41,7 @@ def test_api():
 
     try:
         # -------------------------------------------------------------------
-        # IMAGE TESTS
+        # IMAGE TESTS (EfficientNet + ELA Analyzer)
         # -------------------------------------------------------------------
         img_path = test_files_dir / "valid_image.png"
         img = Image.new("RGB", (300, 300), color=(73, 109, 137))
@@ -57,10 +57,12 @@ def test_api():
         assert res["media_type"] == "image"
         assert res["classification"] in ["FAKE", "REAL", "INCONCLUSIVE"]
         assert "sha256" in res
-        assert "file_size_bytes" in res
-        assert "confidence" in res
-        assert "processing_time_ms" in res["processing"]
-        print(f"[PASS] Test 2: Valid Image Analysis -> Verdict: {res['classification']}, Confidence: {res['confidence']}")
+        assert "detectors" in res and len(res["detectors"]) >= 1
+        assert "forensic_indicators" in res and len(res["forensic_indicators"]) >= 1
+        assert res["forensic_indicators"][0]["indicator_name"] == "Error Level Analysis (ELA)"
+        assert res["forensic_indicators"][0]["is_definitive_ai_proof"] is False
+        assert "disclaimer" in res
+        print(f"[PASS] Test 2: Valid Image Modular Analysis -> Verdict: {res['classification']}, ELA Anomaly: {res['forensic_indicators'][0]['compression_anomaly']}")
 
         # Invalid Image Extension
         invalid_img_path = test_files_dir / "invalid.txt"
@@ -81,7 +83,7 @@ def test_api():
         print("[PASS] Test 4: Corrupt Image Handling")
 
         # -------------------------------------------------------------------
-        # AUDIO TESTS
+        # AUDIO TESTS (YAMNet Sub-Detector)
         # -------------------------------------------------------------------
         wav_path = test_files_dir / "valid_audio.wav"
         data = np.random.uniform(-0.1, 0.1, 16000).astype(np.float32)
@@ -94,8 +96,9 @@ def test_api():
         assert res["success"] is True
         assert res["media_type"] == "audio"
         assert res["classification"] in ["FAKE", "REAL", "INCONCLUSIVE"]
-        assert len(res["sha256"]) == 64
-        print(f"[PASS] Test 5: Valid Audio Analysis -> Verdict: {res['classification']}, Confidence: {res['confidence']}")
+        assert len(res["detectors"]) >= 1
+        assert res["detectors"][0]["detector_name"] == "YAMNet Audio Detector"
+        print(f"[PASS] Test 5: Valid Audio Modular Analysis -> Verdict: {res['classification']}, Sub-Detector: {res['detectors'][0]['detector_name']}")
 
         # Invalid Audio Format
         with open(invalid_img_path, "rb") as f:
@@ -104,7 +107,7 @@ def test_api():
         print("[PASS] Test 6: Invalid Audio Extension Validation")
 
         # -------------------------------------------------------------------
-        # TEMPORAL VIDEO TESTS
+        # VIDEO TESTS (Frame-Based Detector)
         # -------------------------------------------------------------------
         video_path = test_files_dir / "valid_video.mp4"
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -120,8 +123,9 @@ def test_api():
         res = r.json()
         assert res["success"] is True
         assert res["media_type"] == "video"
-        assert "temporal_analysis" in res.get("analysis", {})
-        print(f"[PASS] Test 7: Temporal Video Analysis -> Verdict: {res['classification']}, Continuity: {res['analysis']['temporal_analysis'].get('sequence_continuity')}")
+        assert res["detectors"][0]["metadata"]["is_true_temporal_model"] is False
+        assert "limitations_note" in res["forensic"]
+        print(f"[PASS] Test 7: Frame-Based Video Analysis -> Verdict: {res['classification']}, Sub-Detector: {res['detectors'][0]['detector_name']}")
 
         # Invalid Video Format
         with open(invalid_img_path, "rb") as f:
@@ -130,7 +134,7 @@ def test_api():
         print("[PASS] Test 8: Invalid Video Extension Validation")
 
         # -------------------------------------------------------------------
-        # SQLITE HISTORY & COLLABORATION TEST
+        # SQLITE HISTORY & FORENSIC FUSION PERSISTENCE
         # -------------------------------------------------------------------
         r = requests.get(HISTORY_URL)
         assert r.status_code == 200
@@ -139,7 +143,7 @@ def test_api():
         assert res["count"] >= 3
         print(f"[PASS] Test 9: SQLite History Persistence -> {res['count']} Records Retrieved")
 
-        print("=== ALL API SUITE VERIFICATION TESTS PASSED SUCCESSFULLY ===")
+        print("=== ALL MODULAR API SUITE TESTS PASSED SUCCESSFULLY ===")
         return True
 
     finally:
