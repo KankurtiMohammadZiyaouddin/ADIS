@@ -1,15 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
-
-const API_BASE_URL = 'http://localhost:8000';
+import { checkBackendHealth, predictDeepfakeImage, getHeatmapFullUrl } from '../services/detectionApi';
 
 export default function ImageForensicsPage() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
+  
+  // 5-Stage State Machine: 'IDLE' | 'IMAGE_SELECTED' | 'ANALYZING' | 'COMPLETED' | 'ERROR'
+  const [analysisState, setAnalysisState] = useState('IDLE');
+  
   const [apiResult, setApiResult] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
   const [backendHealth, setBackendHealth] = useState({
+    checking: true,
     online: false,
+    modelLoaded: false,
     universalLoaded: false,
     xceptionLoaded: false,
     faceXrayLoaded: false,
@@ -19,31 +23,38 @@ export default function ImageForensicsPage() {
 
   // Check backend health on mount
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/health`)
-      .then((res) => res.json())
-      .then((data) => {
+    checkBackendHealth().then((res) => {
+      if (res.online && res.data) {
+        const models = res.data.models || {};
         setBackendHealth({
+          checking: false,
           online: true,
-          universalLoaded: data.universal_fake_detect_loaded,
-          xceptionLoaded: data.xception_loaded,
-          faceXrayLoaded: data.face_xray_loaded,
+          modelLoaded: res.data.model_loaded,
+          universalLoaded: models.universal_fake_detect?.loaded ?? res.data.universal_fake_detect_loaded ?? false,
+          xceptionLoaded: models.xceptionnet?.loaded ?? res.data.xception_loaded ?? false,
+          faceXrayLoaded: models.face_xray?.loaded ?? res.data.face_xray_loaded ?? false,
         });
-      })
-      .catch(() => {
+      } else {
         setBackendHealth({
+          checking: false,
           online: false,
+          modelLoaded: false,
           universalLoaded: false,
           xceptionLoaded: false,
           faceXrayLoaded: false,
         });
-      });
+      }
+    });
   }, []);
 
-  // Handle file selection
+  // Reset function when selecting a new image
   const handleFileSelect = (file) => {
     if (!file) return;
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
+    
+    // Strict State Reset
+    setAnalysisState('IMAGE_SELECTED');
     setApiResult(null);
     setErrorMessage(null);
   };
@@ -67,56 +78,46 @@ export default function ImageForensicsPage() {
     }
   };
 
-  // Dispatch POST /api/predict
+  // Dispatch API inference scan across all 3 models on button click ONLY
   const handleRunScan = async () => {
     if (!selectedFile) {
-      setErrorMessage("Please select or drop an image file first.");
+      setErrorMessage("Please upload or select an image file first.");
+      setAnalysisState('ERROR');
       return;
     }
 
-    setIsLoading(true);
+    setAnalysisState('ANALYZING');
     setErrorMessage(null);
-
-    const formData = new FormData();
-    formData.append('image', selectedFile);
-    formData.append('detector', 'all');
+    setApiResult(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/predict`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || data.message || "Failed to process image.");
+      const data = await predictDeepfakeImage(selectedFile, 'all');
+      
+      if (data.success && data.analysis_completed) {
+        setApiResult(data);
+        setAnalysisState('COMPLETED');
+      } else {
+        throw new Error(data.error || data.message || "Image analysis failed.");
       }
-
-      setApiResult(data);
     } catch (err) {
-      setErrorMessage(err.message || "Unable to reach backend API. Ensure FastAPI backend is running at http://localhost:8000.");
-    } finally {
-      setIsLoading(false);
+      setErrorMessage(err.message || "Unable to connect to the detection server.");
+      setAnalysisState('ERROR');
     }
   };
 
-  // Default mock image fallback
-  const defaultOriginalImg = "https://lh3.googleusercontent.com/aida-public/AB6AXuAzghDlgaeyUL8F-vm52pY9Frqo-u2hE9ogT3KknCYBy78a-EJPq9K-QTQUCwrUGyLd1QXKenueYYy622vx9HxqcbLK8dcU9uZfSgjcEFfaKg4mwdB1xMBB8rl-dB6N95Tq8_3DMG2hNhN6UjO4FmOiSwkxoSUGHk2mlrEEf7yiwd3pWc17pwib-t8GLYBMEQlz38byJI4GDdb_-iNxIcqPP8BuFEjd3VyQ3FOQixY3NK6DzcEQuTk";
-  const defaultHeatmapImg = "https://lh3.googleusercontent.com/aida-public/AB6AXuDLVuqNBofXi32qvbqusPM2RQhejmfFdnCWY48Cz5tqg4jb7coYHLIYMHJd6dHuBqoacebjPD0IjH47Ovga7AmXWRAQYIYoLtcWDHQGotI9rTu2tcWeWk5eBNW2R_c29QzHSzeKo9vAh50rLSSnLVCWI8fmxUN0ngzhaxJ-CJLsEqDooQ7as95fJ_gAjr1ooEytqcvKuvFqBHcx2jQlnl3jeiTIfEZbHEh6NfZ7uuZyU8JJiaF2h-A";
+  // State derivation
+  const isIdle = analysisState === 'IDLE';
+  const isImageSelected = analysisState === 'IMAGE_SELECTED';
+  const isAnalyzing = analysisState === 'ANALYZING';
+  const isCompleted = analysisState === 'COMPLETED';
+  const isError = analysisState === 'ERROR';
 
-  const displayOriginal = previewUrl || defaultOriginalImg;
-  const displayHeatmap = apiResult?.heatmap_url 
-    ? `${API_BASE_URL}${apiResult.heatmap_url}` 
-    : defaultHeatmapImg;
-
-  const isFake = apiResult?.prediction === 'AI_GENERATED' || apiResult?.prediction === 'FAKE';
-  const isReal = apiResult?.prediction === 'REAL' || apiResult?.prediction === 'REAL_PHOTO';
-  const confidenceVal = apiResult ? apiResult.confidence : 94.72;
-
-  const univRes = apiResult?.results?.universal_fake_detect;
-  const xcRes = apiResult?.results?.xception;
-  const xrayRes = apiResult?.results?.face_xray;
+  const heatmapDisplayUrl = isCompleted && apiResult?.heatmap_url ? getHeatmapFullUrl(apiResult.heatmap_url) : null;
+  const univRes = isCompleted ? apiResult?.results?.universal_fake_detect : null;
+  const xcRes = isCompleted ? apiResult?.results?.xceptionnet : null;
+  const xrayRes = isCompleted ? apiResult?.results?.face_xray : null;
+  const overall = isCompleted ? apiResult?.overall_assessment : null;
+  const timing = isCompleted ? apiResult?.timing : null;
 
   return (
     <main className="flex-1 overflow-auto bg-background p-gutter flex gap-gutter">
@@ -129,12 +130,12 @@ export default function ImageForensicsPage() {
         className="hidden"
       />
 
-      {/* Center Canvas: Image Comparison */}
+      {/* Center Canvas: Image & Forensic Heatmap */}
       <div className="flex-1 flex flex-col gap-gutter min-w-0">
         <div className="bg-surface-container-lowest border border-outline-variant rounded-lg flex-1 flex flex-col overflow-hidden">
           <div className="h-10 border-b border-outline-variant bg-surface-container flex items-center justify-between px-4 shrink-0">
             <span className="text-label-md text-on-surface flex items-center gap-2">
-              <span>Analysis Canvas: {selectedFile ? selectedFile.name : 'EV-882.jpg'}</span>
+              <span>Multi-Model Forensic Canvas: {selectedFile ? selectedFile.name : 'No image loaded'}</span>
               <span 
                 className={`w-2.5 h-2.5 rounded-full ${backendHealth.online ? 'bg-green-500' : 'bg-amber-500'}`} 
                 title={backendHealth.online ? 'Backend API Online' : 'Backend Offline'} 
@@ -149,83 +150,127 @@ export default function ImageForensicsPage() {
                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>upload_file</span>
                 Select Image
               </button>
-              <button className="p-1 hover:bg-surface-container-highest rounded text-on-surface-variant"><span className="material-symbols-outlined" style={{ fontSize: 18 }}>zoom_in</span></button>
-              <button className="p-1 hover:bg-surface-container-highest rounded text-on-surface-variant"><span className="material-symbols-outlined" style={{ fontSize: 18 }}>zoom_out</span></button>
             </div>
           </div>
 
-          {/* Drag & Drop Canvas Area */}
+          {/* Canvas Drag & Drop Area */}
           <div 
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             className="flex-1 flex gap-4 p-4 min-h-0 bg-surface relative"
           >
-            {/* Original Image Container */}
+            {/* Original Uploaded Image Preview */}
             <div className="flex-1 flex flex-col border border-outline-variant rounded bg-surface-container-lowest relative overflow-hidden group">
               <div className="absolute top-2 left-2 bg-on-surface/80 text-surface-container-lowest px-2 py-1 rounded text-label-sm z-10">
-                Uploaded Image (Full Resolution)
+                Uploaded Image Preview
               </div>
-              <img
-                className="w-full h-full object-contain p-2"
-                alt="Selected image under analysis"
-                src={displayOriginal}
-              />
-              <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
+              
+              {previewUrl ? (
+                <img
+                  className="w-full h-full object-contain p-2"
+                  alt="Selected subject under analysis"
+                  src={previewUrl}
+                />
+              ) : (
+                <div 
                   onClick={() => fileInputRef.current?.click()}
-                  className="bg-primary text-on-primary px-3 py-1.5 rounded text-label-sm shadow-md"
+                  className="w-full h-full flex flex-col items-center justify-center gap-2 text-on-surface-variant cursor-pointer hover:bg-surface-container-highest/40 transition-colors p-4"
                 >
-                  Change Image
-                </button>
-              </div>
+                  <span className="material-symbols-outlined text-outline" style={{ fontSize: 48 }}>add_photo_alternate</span>
+                  <span className="text-body-md font-medium">Click or Drag & Drop Image Here</span>
+                  <span className="text-label-sm text-outline">Supported formats: JPG, PNG, WEBP (Max 10MB)</span>
+                </div>
+              )}
+
+              {previewUrl && (
+                <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-primary text-on-primary px-3 py-1.5 rounded text-label-sm shadow-md"
+                  >
+                    Change Image
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Boundary / Forensic Heatmap Container */}
+            {/* Forensic Heatmap Visualization Panel */}
             <div className="flex-1 flex flex-col border border-outline-variant rounded bg-surface-container-lowest relative overflow-hidden">
               <div className="absolute top-2 left-2 bg-on-surface/80 text-surface-container-lowest px-2 py-1 rounded text-label-sm z-10">
-                Forensic Boundary Heatmap
+                Face-X-Ray Boundary Heatmap
               </div>
-              {isLoading ? (
+
+              {isAnalyzing ? (
                 <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-surface-container-lowest">
                   <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-                  <span className="text-body-sm text-on-surface-variant">Running UniversalFakeDetect, Xception & Face-X-Ray...</span>
+                  <span className="text-body-sm font-medium text-on-surface">Running 3 deepfake detection models...</span>
+                  <span className="text-label-sm text-on-surface-variant">UniversalFakeDetect • XceptionNet • Face-X-Ray</span>
                 </div>
-              ) : (
+              ) : heatmapDisplayUrl ? (
                 <img
                   className="w-full h-full object-contain p-2 filter contrast-125 saturate-150"
                   alt="Forensic boundary heatmap visualization"
-                  src={displayHeatmap}
+                  src={heatmapDisplayUrl}
                 />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-on-surface-variant p-4 text-center">
+                  <span className="material-symbols-outlined text-outline" style={{ fontSize: 40 }}>query_stats</span>
+                  <span className="text-body-sm font-medium">
+                    {xrayRes?.status === 'not_applicable' ? "Visualization Not Applicable (No Face Found)" : "Visualization Pending"}
+                  </span>
+                  <span className="text-label-sm text-outline max-w-xs">
+                    {isIdle && "Select an image and click 'Analyze Image' to run all 3 detection models."}
+                    {isImageSelected && "Click 'Analyze Image' to execute UniversalFakeDetect, XceptionNet, and Face-X-Ray."}
+                    {isCompleted && xrayRes?.status === 'not_applicable' && "Face-X-Ray boundary map requires a face in the target image."}
+                  </span>
+                </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Secondary Panel: Active Detectors & Models */}
-        <div className="h-48 flex gap-gutter shrink-0">
+        {/* Secondary Metadata & Model Status Panel */}
+        <div className="h-44 flex gap-gutter shrink-0">
           <div className="flex-1 bg-surface-container-lowest border border-outline-variant rounded-lg flex flex-col overflow-hidden">
-            <div className="h-8 border-b border-outline-variant bg-surface-container flex items-center px-4 text-label-md text-on-surface">
-              Active Detectors & Architecture Summary
+            <div className="h-8 border-b border-outline-variant bg-surface-container flex items-center justify-between px-4 text-label-md text-on-surface font-semibold">
+              <span>System & Analysis Metadata</span>
+              {isCompleted && timing && (
+                <span className="text-label-sm text-primary font-normal">
+                  Inference Timing: Universal ({timing.universal_ms}ms) | XceptionNet ({timing.xception_ms}ms) | Face-X-Ray ({timing.face_xray_ms}ms) | Total ({(timing.total_ms / 1000).toFixed(2)}s)
+                </span>
+              )}
             </div>
             <div className="p-3 overflow-y-auto">
               <table className="w-full text-body-sm font-body-sm text-left">
                 <tbody>
                   <tr className="border-b border-surface-variant">
-                    <th className="py-1 text-on-surface-variant font-medium w-1/3">1. General AI Image Detector</th>
-                    <td className="py-1 text-primary font-medium">UniversalFakeDetect (CLIP ViT-L/14, CVPR 2023)</td>
+                    <th className="py-1 text-on-surface-variant font-medium w-1/3">Target Image File</th>
+                    <td className="py-1 text-on-surface">{selectedFile ? selectedFile.name : 'None selected'}</td>
                   </tr>
                   <tr className="border-b border-surface-variant">
-                    <th className="py-1 text-on-surface-variant font-medium">2. Deepfake Face Detector</th>
-                    <td className="py-1 text-on-surface font-medium">XceptionNet (FaceForensics++)</td>
+                    <th className="py-1 text-on-surface-variant font-medium">Detector Suite</th>
+                    <td className="py-1 text-primary font-medium">UniversalFakeDetect + XceptionNet + Face-X-Ray (3 Independent Models)</td>
                   </tr>
                   <tr className="border-b border-surface-variant">
-                    <th className="py-1 text-on-surface-variant font-medium">3. Face Manipulation Detector</th>
-                    <td className="py-1 text-on-surface font-medium">Face-X-Ray (Boundary Artifact Analysis)</td>
+                    <th className="py-1 text-on-surface-variant font-medium">Backend Server Status</th>
+                    <td className="py-1 text-on-surface">
+                      {backendHealth.checking ? (
+                        <span className="text-primary font-medium animate-pulse">Checking backend...</span>
+                      ) : backendHealth.online ? (
+                        <span className="text-green-600 font-medium">Online (FastAPI http://localhost:8000)</span>
+                      ) : (
+                        <span className="text-amber-600 font-medium">Offline / Server Unavailable</span>
+                      )}
+                    </td>
                   </tr>
                   <tr>
-                    <th className="py-1 text-on-surface-variant font-medium">System Status</th>
-                    <td className="py-1 text-on-surface">
-                      {apiResult ? apiResult.message : (selectedFile ? "File loaded. Click 'Run Deepfake Scan'." : "Select or drop any image (photo, landscape, art, face).")}
+                    <th className="py-1 text-on-surface-variant font-medium">Analysis Pipeline Status</th>
+                    <td className="py-1 text-on-surface font-medium">
+                      {isIdle && "No image loaded. Please select an image."}
+                      {isImageSelected && "Image ready for analysis. Click 'Analyze Image' below."}
+                      {isAnalyzing && <span className="text-primary animate-pulse">Running 3 detection models in parallel...</span>}
+                      {isCompleted && <span className="text-green-600">All 3 model predictions completed in {(apiResult.timing?.total_ms / 1000).toFixed(2)}s</span>}
+                      {isError && <span className="text-error">{errorMessage || "Analysis failed."}</span>}
                     </td>
                   </tr>
                 </tbody>
@@ -235,149 +280,251 @@ export default function ImageForensicsPage() {
         </div>
       </div>
 
-      {/* Right Sidebar: Analysis Panel */}
-      <div className="w-80 flex flex-col gap-gutter shrink-0">
-        {/* Error Alert Banner if present */}
-        {errorMessage && (
+      {/* Right Sidebar: Multi-Model Results & Verdict Panel */}
+      <div className="w-96 flex flex-col gap-gutter shrink-0 overflow-y-auto">
+        {/* Error Alert Banner */}
+        {isError && (
           <div className="bg-error-container/30 border border-error p-3 rounded-lg text-body-sm text-on-surface flex items-start gap-2">
             <span className="material-symbols-outlined text-error shrink-0" style={{ fontSize: 18 }}>error</span>
             <div className="flex-1">
               <span className="font-semibold block text-error">Detection Error</span>
-              {errorMessage}
+              {errorMessage || "Unable to connect to the detection server."}
             </div>
           </div>
         )}
 
-        {/* AI IMAGE ANALYSIS Card */}
+        {/* OVERALL ASSESSMENT CARD */}
         <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-4">
-          <h3 className="text-headline-sm font-headline-sm text-on-surface mb-1">AI IMAGE ANALYSIS</h3>
-          <p className="text-label-sm text-on-surface-variant mb-4">
-            Multi-Model Evaluation Pipeline
+          <h3 className="text-headline-sm font-headline-sm text-on-surface mb-1">OVERALL ASSESSMENT</h3>
+          <p className="text-label-sm text-on-surface-variant mb-3">
+            Transparent Multi-Detector Evidence Synthesis
           </p>
 
-          {/* Overall Prediction Badge */}
-          <div className="mb-4 p-3 rounded-lg border flex items-center justify-between bg-surface">
+          {/* Verdict Status Badge */}
+          <div className="mb-3 p-3 rounded-lg border flex items-center justify-between bg-surface">
             <div>
-              <div className="text-label-sm text-on-surface-variant uppercase tracking-wider">Overall Verdict</div>
-              <div className={`text-title-lg font-bold ${isFake ? 'text-error' : isReal ? 'text-green-600' : 'text-on-surface'}`}>
-                {apiResult ? (isFake ? 'AI GENERATED / FAKE' : 'AUTHENTIC PHOTO') : 'PENDING'}
+              <div className="text-label-sm text-on-surface-variant uppercase tracking-wider">Final Verdict</div>
+              <div className={`text-title-md font-bold ${
+                isCompleted 
+                  ? (overall?.verdict === 'LIKELY MANIPULATED' || overall?.verdict === 'AI GENERATED IMAGE'
+                      ? 'text-error' 
+                      : (overall?.verdict === 'LIKELY AUTHENTIC' ? 'text-green-600' : 'text-amber-600'))
+                  : 'text-on-surface-variant'
+              }`}>
+                {isCompleted ? overall?.verdict : 'NOT ANALYZED'}
               </div>
             </div>
-            <div className={`px-2.5 py-1 rounded text-label-sm font-semibold ${isFake ? 'bg-error-container text-on-error-container' : isReal ? 'bg-green-100 text-green-800' : 'bg-surface-variant text-on-surface-variant'}`}>
-              {isFake ? 'Likely Manipulated' : isReal ? 'Likely Authentic' : 'Ready'}
+
+            <div className={`px-2 py-1 rounded text-label-sm font-semibold ${
+              isCompleted 
+                ? (overall?.verdict === 'LIKELY MANIPULATED' || overall?.verdict === 'AI GENERATED IMAGE'
+                    ? 'bg-error-container text-on-error-container' 
+                    : (overall?.verdict === 'LIKELY AUTHENTIC' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'))
+                : 'bg-surface-variant text-on-surface-variant'
+            }`}>
+              {isCompleted ? overall?.verdict : (isAnalyzing ? 'Analyzing...' : isImageSelected ? 'Ready' : 'No Image')}
             </div>
           </div>
 
-          {/* Overall Confidence Bar */}
-          <div className="mb-4">
-            <div className="flex justify-between items-end mb-1">
-              <span className="text-label-md text-on-surface-variant">Confidence Score</span>
-              <span className={`text-title-lg font-title-lg ${isFake ? 'text-error' : 'text-primary'}`}>
-                {confidenceVal.toFixed(2)}%
-              </span>
-            </div>
-            <div className="w-full bg-surface-variant rounded-full h-2">
-              <div
-                className={`h-2 rounded-full transition-all duration-500 ${isFake ? 'bg-error' : 'bg-primary'}`}
-                style={{ width: `${confidenceVal}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Individual Detector Cards Breakdown */}
-          <div className="space-y-2 mb-4">
-            <h4 className="text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold border-b pb-1">
-              Detector Breakdown
-            </h4>
-
-            {/* 1. UniversalFakeDetect Card */}
-            <div className="p-2.5 rounded border border-outline-variant bg-surface space-y-1 text-body-sm">
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-on-surface">UniversalFakeDetect</span>
-                <span className={`font-bold ${univRes?.prediction === 'AI_GENERATED' ? 'text-error' : 'text-green-600'}`}>
-                  {univRes ? (univRes.prediction === 'AI_GENERATED' ? 'AI GENERATED' : 'REAL PHOTO') : 'Ready'}
-                </span>
-              </div>
-              <div className="text-label-sm text-on-surface-variant flex justify-between">
-                <span>Arch: CLIP ViT-L/14</span>
-                <span>Conf: {univRes ? `${univRes.confidence.toFixed(1)}%` : '--'}</span>
-              </div>
-            </div>
-
-            {/* 2. XceptionNet Card */}
-            <div className="p-2.5 rounded border border-outline-variant bg-surface space-y-1 text-body-sm">
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-on-surface">XceptionNet</span>
-                <span className={`font-bold ${xcRes?.prediction === 'FAKE' ? 'text-error' : 'text-green-600'}`}>
-                  {xcRes ? xcRes.prediction : 'Ready'}
-                </span>
-              </div>
-              <div className="text-label-sm text-on-surface-variant flex justify-between">
-                <span>Model: FaceForensics++</span>
-                <span>Conf: {xcRes ? `${xcRes.confidence.toFixed(1)}%` : '--'}</span>
-              </div>
-            </div>
-
-            {/* 3. Face-X-Ray Card */}
-            <div className="p-2.5 rounded border border-outline-variant bg-surface space-y-1 text-body-sm">
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-on-surface">Face-X-Ray</span>
-                <span className={`font-bold ${xrayRes?.prediction === 'FAKE' ? 'text-error' : 'text-green-600'}`}>
-                  {xrayRes ? xrayRes.prediction : 'Ready'}
-                </span>
-              </div>
-              <div className="text-label-sm text-on-surface-variant flex justify-between">
-                <span>Boundary Analysis</span>
-                <span>Conf: {xrayRes ? `${xrayRes.confidence.toFixed(1)}%` : '--'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Model Analysis Text Message */}
-          {apiResult && (
-            <div className={`p-3 rounded border text-body-sm ${isFake ? 'bg-error-container/20 border-error-container text-on-surface' : 'bg-green-50 border-green-200 text-on-surface'}`}>
-              <div className="font-semibold mb-1 flex items-center gap-1">
-                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
-                  {isFake ? 'warning' : 'verified'}
-                </span>
-                {isFake ? 'Manipulation Warning' : 'Authenticity Notice'}
-              </div>
-              <p>{apiResult.message}</p>
+          {/* Summary & Evidence List */}
+          {isCompleted && overall && (
+            <div className="space-y-2 mb-3">
+              <p className="text-body-sm text-on-surface bg-surface p-2.5 rounded border border-outline-variant font-medium">
+                {overall.summary}
+              </p>
+              {overall.evidence && overall.evidence.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-label-sm text-on-surface-variant font-semibold uppercase tracking-wider block">Evidence Breakdown:</span>
+                  <ul className="space-y-1 text-label-sm">
+                    {overall.evidence.map((ev, idx) => (
+                      <li key={idx} className="p-1.5 rounded bg-surface border border-outline-variant text-on-surface">
+                        {ev}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* Scan Action Card */}
-        <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-4 flex-1">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-label-md text-on-surface font-semibold">Inference Control</h3>
-            <button
-              onClick={handleRunScan}
-              disabled={isLoading}
-              className="bg-secondary text-on-secondary px-3.5 py-1.5 rounded text-label-sm hover:opacity-90 transition-opacity flex items-center gap-1 disabled:opacity-50 shadow-sm"
-            >
-              {isLoading ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Scanning...
-                </>
-              ) : (
-                <>
-                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>search</span>
-                  Run Deepfake Scan
-                </>
-              )}
-            </button>
+        {/* THREE INDIVIDUAL DETECTOR CARDS */}
+        <div className="space-y-3">
+          <h4 className="text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold">
+            Individual Model Results (3 Detectors)
+          </h4>
+
+          {/* DETECTOR CARD 1: UniversalFakeDetect */}
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-3.5 space-y-2">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-label-md text-on-surface font-bold block">1. UniversalFakeDetect</span>
+                <span className="text-label-sm text-on-surface-variant">General AI Image Detection (CLIP ViT-L/14)</span>
+              </div>
+              <span className={`px-2 py-0.5 rounded text-label-sm font-semibold ${
+                univRes?.status === 'completed'
+                  ? 'bg-blue-100 text-blue-800'
+                  : (univRes?.status === 'error' ? 'bg-error-container text-on-error-container' : 'bg-surface-variant text-on-surface-variant')
+              }`}>
+                {univRes ? univRes.status.toUpperCase() : 'READY'}
+              </span>
+            </div>
+
+            {isCompleted && univRes?.status === 'completed' && (
+              <div className="p-2 rounded bg-surface border border-outline-variant flex justify-between items-center text-body-sm">
+                <span className="text-on-surface font-medium">Prediction:</span>
+                <span className={`font-bold ${univRes.prediction === 'AI_GENERATED' ? 'text-error' : 'text-green-600'}`}>
+                  {univRes.prediction === 'AI_GENERATED' ? 'AI GENERATED' : 'REAL PHOTO'} ({univRes.confidence.toFixed(1)}%)
+                </span>
+              </div>
+            )}
+
+            {isCompleted && univRes?.status === 'error' && (
+              <div className="p-2 rounded bg-error-container/20 border border-error-container text-error text-label-sm">
+                Error: {univRes.error || "Model checkpoint missing"}
+              </div>
+            )}
           </div>
 
-          <div className="text-body-sm text-on-surface-variant bg-surface p-3 rounded border border-outline-variant">
-            <div className="font-medium text-on-surface mb-1">Coverage Scope:</div>
-            <ul className="list-disc list-inside space-y-1 text-label-sm">
-              <li>Universal fake detection for landscapes, art, photos & faces</li>
-              <li>Face-swap & facial deepfake identification</li>
-              <li>Pixel-level boundary anomaly mapping</li>
-            </ul>
+          {/* DETECTOR CARD 2: XceptionNet */}
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-3.5 space-y-2">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-label-md text-on-surface font-bold block">2. XceptionNet</span>
+                <span className="text-label-sm text-on-surface-variant">Deepfake Face Detection (FaceForensics++)</span>
+              </div>
+              <span className={`px-2 py-0.5 rounded text-label-sm font-semibold ${
+                xcRes?.status === 'completed'
+                  ? 'bg-blue-100 text-blue-800'
+                  : (xcRes?.status === 'not_applicable' ? 'bg-amber-100 text-amber-800' : (xcRes?.status === 'error' ? 'bg-error-container text-on-error-container' : 'bg-surface-variant text-on-surface-variant'))
+              }`}>
+                {xcRes ? (xcRes.status === 'not_applicable' ? 'N/A (NO FACE)' : xcRes.status.toUpperCase()) : 'READY'}
+              </span>
+            </div>
+
+            {isCompleted && xcRes?.status === 'completed' && (
+              <div className="p-2 rounded bg-surface border border-outline-variant flex justify-between items-center text-body-sm">
+                <span className="text-on-surface font-medium">Prediction:</span>
+                <span className={`font-bold ${xcRes.prediction === 'FAKE' ? 'text-error' : 'text-green-600'}`}>
+                  {xcRes.prediction} ({xcRes.confidence.toFixed(1)}%)
+                </span>
+              </div>
+            )}
+
+            {isCompleted && xcRes?.status === 'not_applicable' && (
+              <div className="p-2 rounded bg-surface border border-outline-variant text-on-surface-variant text-label-sm">
+                <span className="font-semibold block text-amber-700">Not Applicable</span>
+                {xcRes.reason || "No face found in target image."}
+              </div>
+            )}
+
+            {isCompleted && xcRes?.status === 'error' && (
+              <div className="p-2 rounded bg-error-container/20 border border-error-container text-error text-label-sm">
+                Error: {xcRes.error || "Model checkpoint missing"}
+              </div>
+            )}
           </div>
+
+          {/* DETECTOR CARD 3: Face-X-Ray */}
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-3.5 space-y-2">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-label-md text-on-surface font-bold block">3. Face-X-Ray</span>
+                <span className="text-label-sm text-on-surface-variant">Face Blending & Boundary Analysis</span>
+              </div>
+              <span className={`px-2 py-0.5 rounded text-label-sm font-semibold ${
+                xrayRes?.status === 'completed'
+                  ? 'bg-blue-100 text-blue-800'
+                  : (xrayRes?.status === 'not_applicable' ? 'bg-amber-100 text-amber-800' : (xrayRes?.status === 'error' ? 'bg-error-container text-on-error-container' : 'bg-surface-variant text-on-surface-variant'))
+              }`}>
+                {xrayRes ? (xrayRes.status === 'not_applicable' ? 'N/A (NO FACE)' : xrayRes.status.toUpperCase()) : 'READY'}
+              </span>
+            </div>
+
+            {isCompleted && xrayRes?.status === 'completed' && (
+              <div className="p-2 rounded bg-surface border border-outline-variant flex justify-between items-center text-body-sm">
+                <span className="text-on-surface font-medium">Prediction:</span>
+                <span className={`font-bold ${xrayRes.prediction === 'FAKE' ? 'text-error' : 'text-green-600'}`}>
+                  {xrayRes.prediction} ({xrayRes.confidence.toFixed(1)}%)
+                </span>
+              </div>
+            )}
+
+            {isCompleted && xrayRes?.status === 'not_applicable' && (
+              <div className="p-2 rounded bg-surface border border-outline-variant text-on-surface-variant text-label-sm">
+                <span className="font-semibold block text-amber-700">Not Applicable</span>
+                {xrayRes.reason || "No face found in target image."}
+              </div>
+            )}
+
+            {isCompleted && xrayRes?.status === 'error' && (
+              <div className="p-2 rounded bg-error-container/20 border border-error-container text-error text-label-sm">
+                Error: {xrayRes.error || "Model checkpoint missing"}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Model Information Card */}
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-4">
+          <h4 className="text-label-md text-on-surface font-semibold mb-2">Model Status & Architecture</h4>
+          <div className="space-y-1 text-label-sm text-on-surface-variant">
+            <div className="flex justify-between">
+              <span>UniversalFakeDetect:</span>
+              <span className={backendHealth.universalLoaded ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                {backendHealth.universalLoaded ? "Loaded (fc_weights.pth)" : "Unavailable"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>XceptionNet:</span>
+              <span className={backendHealth.xceptionLoaded ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                {backendHealth.xceptionLoaded ? "Loaded (FF++_c23.pth)" : "Unavailable"}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>Face-X-Ray:</span>
+              <span className={backendHealth.faceXrayLoaded ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                {backendHealth.faceXrayLoaded ? "Loaded (face_xray.pth)" : "Unavailable"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Action Button Card */}
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-4 flex flex-col justify-between">
+          <div>
+            <h3 className="text-label-md text-on-surface font-semibold mb-1">Inference Control</h3>
+            <p className="text-label-sm text-on-surface-variant mb-3">
+              {isIdle && "Please select an image file to start multi-model scan."}
+              {isImageSelected && "Image loaded. Click 'Analyze Image' to execute all 3 detectors."}
+              {isAnalyzing && "Model inference in progress across 3 models..."}
+              {isCompleted && "Analysis finished. Select a new image or scan again."}
+              {isError && "Scan failed. Select a valid image to try again."}
+            </p>
+          </div>
+
+          <button
+            onClick={handleRunScan}
+            disabled={isIdle || isAnalyzing}
+            className="w-full bg-secondary text-on-secondary py-2.5 rounded text-label-md font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+          >
+            {isAnalyzing ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Analyzing Image... Running 3 Models...
+              </>
+            ) : isCompleted ? (
+              <>
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>refresh</span>
+                Analyze Again
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>search</span>
+                Analyze Image
+              </>
+            )}
+          </button>
         </div>
       </div>
     </main>

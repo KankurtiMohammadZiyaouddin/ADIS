@@ -1,6 +1,13 @@
 import os
 import sys
 
+# Limit OpenBLAS and OpenMP threads to prevent memory allocation collisions in PyTorch multi-processing on Windows
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 # Ensure backend directory is in Python module search path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
@@ -25,6 +32,7 @@ origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
 
 app.add_middleware(
@@ -60,63 +68,112 @@ def health_check():
     """
     Health check endpoint returning status and loaded flags for all 3 detectors.
     """
+    all_loaded = (
+        prediction_service.universal_loaded and 
+        prediction_service.xception_loaded and 
+        prediction_service.face_xray_loaded
+    )
+    any_loaded = (
+        prediction_service.universal_loaded or 
+        prediction_service.xception_loaded or 
+        prediction_service.face_xray_loaded
+    )
     return {
-        "status": "ok",
-        "universal_fake_detect_loaded": prediction_service.universal_loaded,
-        "xception_loaded": prediction_service.xception_loaded,
-        "face_xray_loaded": prediction_service.face_xray_loaded,
+        "status": "ok" if any_loaded else "degraded",
+        "backend": "online",
+        "model_loaded": any_loaded,
+        "all_models_loaded": all_loaded,
+        "models": {
+            "universal_fake_detect": {
+                "loaded": prediction_service.universal_loaded,
+                "checkpoint": "models/universal_fake_detect/fc_weights.pth"
+            },
+            "xceptionnet": {
+                "loaded": prediction_service.xception_loaded,
+                "checkpoint": f"models/checkpoints/{prediction_service.active_checkpoint_xception}"
+            },
+            "face_xray": {
+                "loaded": prediction_service.face_xray_loaded,
+                "checkpoint": "models/checkpoints/face_xray.pth"
+            }
+        },
         "device": str(prediction_service.device)
     }
 
 @app.post("/api/predict")
-async def predict_deepfake(
+def predict_deepfake(
     image: UploadFile = File(...),
     detector: Optional[str] = Form("all")
 ):
     """
     Multi-Model Image Deepfake & AI-Generated Image Detection Endpoint.
-    Accepts multipart/form-data with 'image' field and optional 'detector' parameter.
+    Accepts multipart/form-data with 'image' field.
+    Returns prediction, confidence score, face status, inference time, and heatmap URL.
     """
     if not image or not image.filename:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No image file provided in request."
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "analysis_completed": False,
+                "error": "No image file provided in request."
+            }
         )
 
     # 1. Extension Validation
     file_ext = os.path.splitext(image.filename)[1].lower()
     if file_ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported file extension '{file_ext}'. Allowed formats: JPG, JPEG, PNG, WEBP."
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "analysis_completed": False,
+                "error": f"Unsupported file extension '{file_ext}'. Allowed formats: JPG, JPEG, PNG, WEBP."
+            }
         )
 
     # 2. Content Type Validation
     if image.content_type and image.content_type.lower() not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid MIME type '{image.content_type}'. Allowed types: image/jpeg, image/png, image/webp."
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "analysis_completed": False,
+                "error": f"Invalid MIME type '{image.content_type}'. Allowed types: image/jpeg, image/png, image/webp."
+            }
         )
 
     # 3. Read Bytes & Validate Size
     try:
-        contents = await image.read()
+        contents = image.file.read()
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to read uploaded image bytes: {str(e)}"
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "analysis_completed": False,
+                "error": f"Failed to read uploaded image bytes: {str(e)}"
+            }
         )
 
     if len(contents) > MAX_FILE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File size exceeds maximum allowed limit of {MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB."
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "analysis_completed": False,
+                "error": f"File size exceeds maximum allowed limit of {MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB."
+            }
         )
 
     if len(contents) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded file is empty (0 bytes)."
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "analysis_completed": False,
+                "error": "Uploaded image file is empty (0 bytes)."
+            }
         )
 
     # 4. Run Model Prediction Pipeline
@@ -132,12 +189,8 @@ async def predict_deepfake(
             status_code=500,
             content={
                 "success": False,
-                "prediction": "ERROR",
-                "confidence": 0.0,
-                "face_detected": False,
-                "message": f"Internal model inference failure: {str(e)}",
-                "heatmap_url": None,
-                "results": {}
+                "analysis_completed": False,
+                "error": f"Internal model inference failure: {str(e)}"
             }
         )
 
