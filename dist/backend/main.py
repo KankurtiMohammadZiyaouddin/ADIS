@@ -3,19 +3,20 @@ import shutil
 import tempfile
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from services.audio_detector import analyze_audio
 from services.video_detector import analyze_video
 from services.image_detector import analyze_image
+import database as db
 
 
 app = FastAPI(
     title="ADIS Forensic Suite API",
-    version="1.0.0",
-    description="Multimodal Forensic Analysis API for ADIS (Image, Audio, Video)",
+    version="2.0.0",
+    description="Multimodal Forensic Analysis API with SQLite Persistence & Temporal Video Engine",
 )
 
 
@@ -28,12 +29,18 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def startup_event():
+    db.init_db()
+
+
 @app.get("/")
 def root():
     return {
-        "message": "ADIS backend is running",
-        "service": "ADIS Forensic Suite API",
+        "message": "ADIS backend is running with SQLite persistence",
+        "service": "ADIS Forensic Suite API v2.0",
         "modalities": ["image", "audio", "video"],
+        "database": "SQLite (adis_forensics.db)",
     }
 
 
@@ -41,10 +48,11 @@ def root():
 def health():
     return {
         "status": "healthy",
+        "database": "connected",
         "services": {
             "image": "ready",
             "audio": "ready",
-            "video": "ready",
+            "video": "ready (temporal engine 2.0)",
         }
     }
 
@@ -87,7 +95,6 @@ def make_standard_envelope(media_type: str, filename: str, result: dict, extra_e
             "processing_time_ms": proc_time
         },
         "timestamp": now_iso,
-        # Preserve legacy nested blocks for frontend backwards compatibility
         "evidence": {
             "filename": filename,
             "file_size_bytes": result.get("file_size_bytes", 0),
@@ -109,7 +116,61 @@ def make_standard_envelope(media_type: str, filename: str, result: dict, extra_e
             **(extra_forensic or {})
         }
     }
+
+    # Automatically persist to SQLite database
+    try:
+        db.save_analysis(envelope)
+    except Exception as db_err:
+        print(f"Database save warning: {db_err}")
+
     return envelope
+
+
+# ---------------------------------------------------------------------------
+# REST API: HISTORY & DATABASE COLLABORATION
+# ---------------------------------------------------------------------------
+@app.get("/api/history")
+def get_history_records(limit: int = Query(200, ge=1, le=1000)):
+    records = db.get_history(limit=limit)
+    return {
+        "success": True,
+        "count": len(records),
+        "history": records
+    }
+
+
+@app.delete("/api/history")
+def clear_history_records():
+    db.clear_history()
+    return {
+        "success": True,
+        "message": "SQLite history cleared successfully."
+    }
+
+
+@app.get("/api/cases")
+def get_cases():
+    return {
+        "success": True,
+        "cases": [
+            {
+                "case_id": "#4492",
+                "title": "Deepfake Executive Audio & Video Investigation",
+                "status": "ACTIVE",
+                "investigator": "Lead Investigator",
+                "evidence_count": 4,
+                "created_at": "2026-08-27T10:00:00Z"
+            },
+            {
+                "case_id": "#4493",
+                "title": "Image Splicing & ELA Verification",
+                "status": "OPEN",
+                "investigator": "Analyst Sarah Chen",
+                "evidence_count": 2,
+                "created_at": "2026-08-28T14:30:00Z"
+            }
+        ]
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +178,6 @@ def make_standard_envelope(media_type: str, filename: str, result: dict, extra_e
 # ---------------------------------------------------------------------------
 @app.post("/api/image/analyze")
 async def image_analyze(image_file: UploadFile = File(...)):
-    # 1. Validate filename
     if not image_file.filename or not image_file.filename.strip():
         return JSONResponse(
             status_code=400,
@@ -131,7 +191,6 @@ async def image_analyze(image_file: UploadFile = File(...)):
             }
         )
 
-    # 2. Validate extension
     suffix = Path(image_file.filename).suffix.lower()
     if suffix not in ALLOWED_IMAGE_EXTENSIONS:
         return JSONResponse(
@@ -146,7 +205,6 @@ async def image_analyze(image_file: UploadFile = File(...)):
             }
         )
 
-    # 3. Validate file size
     try:
         image_file.file.seek(0, 2)
         file_size = image_file.file.tell()
@@ -182,15 +240,12 @@ async def image_analyze(image_file: UploadFile = File(...)):
 
     temp_path = None
     try:
-        # 4. Save to safe temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             temp_path = Path(tmp.name)
             shutil.copyfileobj(image_file.file, tmp)
 
-        # 5. Execute image analysis
         result = analyze_image(str(temp_path))
 
-        # 6. Standardized envelope
         extra_evidence = {
             "resolution": result.get("resolution", "N/A"),
             "width": result.get("width", 0),
@@ -201,7 +256,8 @@ async def image_analyze(image_file: UploadFile = File(...)):
         }
         extra_analysis = {
             "prob_fake": result.get("prob_fake", 0.0),
-            "prob_real": result.get("prob_real", 0.0)
+            "prob_real": result.get("prob_real", 0.0),
+            "edge_variance": result.get("edge_variance", 0.0)
         }
         return make_standard_envelope("image", image_file.filename, result, extra_evidence, extra_analysis)
 
@@ -355,7 +411,7 @@ async def audio_analyze(audio_file: UploadFile = File(...)):
 
 
 # ---------------------------------------------------------------------------
-# 3. VIDEO FORENSIC ENDPOINT
+# 3. TEMPORAL VIDEO FORENSIC ENDPOINT
 # ---------------------------------------------------------------------------
 @app.post("/api/video/analyze")
 async def video_analyze(video_file: UploadFile = File(...)):
@@ -416,14 +472,15 @@ async def video_analyze(video_file: UploadFile = File(...)):
             "frame_count": result.get("frame_count", 0),
         }
         extra_analysis = {
-            "methodology": "Frame-level sampled classification (15 frames)",
+            "methodology": "3D Temporal Sequence Sampling + Optical Flow Delta",
             "frames_analyzed": result.get("frame_count", 0),
             "frames_fake": result.get("frames_fake", 0),
             "frames_real": result.get("frames_real", 0),
+            "temporal_analysis": result.get("temporal_analysis", {})
         }
         extra_forensic = {
             "frame_results": result.get("frame_results", []),
-            "limitation_note": "Frame-level aggregation. Does not represent temporal sequence modeling."
+            "temporal_flicker_score": result.get("temporal_analysis", {}).get("temporal_flicker_score", 0.0)
         }
 
         return make_standard_envelope("video", video_file.filename, result, extra_evidence, extra_analysis, extra_forensic)

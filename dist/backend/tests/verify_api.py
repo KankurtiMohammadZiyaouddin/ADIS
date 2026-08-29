@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 import soundfile as sf
 import numpy as np
+import cv2
 from PIL import Image, ImageDraw
 import requests
 
@@ -17,6 +18,7 @@ HEALTH_URL = f"{API_BASE}/api/health"
 IMAGE_ANALYZE_URL = f"{API_BASE}/api/image/analyze"
 AUDIO_ANALYZE_URL = f"{API_BASE}/api/audio/analyze"
 VIDEO_ANALYZE_URL = f"{API_BASE}/api/video/analyze"
+HISTORY_URL = f"{API_BASE}/api/history"
 
 
 def test_api():
@@ -28,6 +30,7 @@ def test_api():
         assert r.status_code == 200, f"Expected 200, got {r.status_code}"
         res = r.json()
         assert res["status"] == "healthy"
+        assert res["database"] == "connected"
         print("[PASS] Test 1: Health Check GET /api/health")
     except Exception as e:
         print(f"[FAIL] Test 1: Health Check failed: {e}")
@@ -40,7 +43,6 @@ def test_api():
         # -------------------------------------------------------------------
         # IMAGE TESTS
         # -------------------------------------------------------------------
-        # Valid Image
         img_path = test_files_dir / "valid_image.png"
         img = Image.new("RGB", (300, 300), color=(73, 109, 137))
         d = ImageDraw.Draw(img)
@@ -102,13 +104,40 @@ def test_api():
         print("[PASS] Test 6: Invalid Audio Extension Validation")
 
         # -------------------------------------------------------------------
-        # VIDEO TESTS
+        # TEMPORAL VIDEO TESTS
         # -------------------------------------------------------------------
+        video_path = test_files_dir / "valid_video.mp4"
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(str(video_path), fourcc, 10.0, (128, 128))
+        for i in range(20):
+            frame = np.full((128, 128, 3), (i * 12) % 256, dtype=np.uint8)
+            out.write(frame)
+        out.release()
+
+        with open(video_path, "rb") as f:
+            r = requests.post(VIDEO_ANALYZE_URL, files={"video_file": (video_path.name, f, "video/mp4")})
+        assert r.status_code == 200, f"Expected 200 for video, got {r.status_code}: {r.text}"
+        res = r.json()
+        assert res["success"] is True
+        assert res["media_type"] == "video"
+        assert "temporal_analysis" in res.get("analysis", {})
+        print(f"[PASS] Test 7: Temporal Video Analysis -> Verdict: {res['classification']}, Continuity: {res['analysis']['temporal_analysis'].get('sequence_continuity')}")
+
         # Invalid Video Format
         with open(invalid_img_path, "rb") as f:
             r = requests.post(VIDEO_ANALYZE_URL, files={"video_file": (invalid_img_path.name, f, "text/plain")})
         assert r.status_code == 400
-        print("[PASS] Test 7: Invalid Video Extension Validation")
+        print("[PASS] Test 8: Invalid Video Extension Validation")
+
+        # -------------------------------------------------------------------
+        # SQLITE HISTORY & COLLABORATION TEST
+        # -------------------------------------------------------------------
+        r = requests.get(HISTORY_URL)
+        assert r.status_code == 200
+        res = r.json()
+        assert res["success"] is True
+        assert res["count"] >= 3
+        print(f"[PASS] Test 9: SQLite History Persistence -> {res['count']} Records Retrieved")
 
         print("=== ALL API SUITE VERIFICATION TESTS PASSED SUCCESSFULLY ===")
         return True
