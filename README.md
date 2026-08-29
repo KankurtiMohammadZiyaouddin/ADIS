@@ -1,58 +1,162 @@
-# ADIS Forensic Suite — React App
+# ADIS Forensic Suite — Multi-Model AI Deepfake & Synthetic Image Detection
 
-A single, maintainable React application converted from 13 standalone Stitch-generated
-HTML prototypes (login, dashboard, cases, case investigation, evidence management,
-image/video/audio forensics, metadata & provenance, cross-modal analysis, investigation
-timeline, reports, audit logs).
+A complete digital forensic application featuring real-time **AI Deepfake & Synthetic Image Detection** powered by a **Python FastAPI backend** and a **Vite + React frontend**.
 
-## Stack
-- Vite + React
-- React Router (`react-router-dom`) for client-side routing
-- Tailwind CSS, configured from the shared `DESIGN.md` design tokens (colors, type scale,
-  spacing, radius) that were consistent across all 13 original prototypes
-- Chart.js for the dashboard risk-breakdown doughnut chart
+---
 
-## Structure
+## 🚀 Multi-Detector Architecture
+
+The Image Forensics pipeline orchestrates three specialized deepfake detection models:
+
+1. **UniversalFakeDetect (CVPR 2023)**:
+   - **Paper**: *"Towards Universal Fake Image Detectors that Generalize Across Generative Models"* (Ojha et al., CVPR 2023).
+   - **Backbone**: CLIP ViT-L/14 Vision Transformer + Linear Classifier (`pretrained_weights/fc_weights.pth`).
+   - **Scope**: General AI-generated image detection across generative models (GANs, Diffusion models, Midjourney, Stable Diffusion, DALL-E, landscapes, art, photos, and faces). Does **NOT** require face detection.
+   
+2. **HongguLiu Deepfake-Detection (XceptionNet)**:
+   - **Repository**: [HongguLiu/Deepfake-Detection](https://github.com/HongguLiu/Deepfake-Detection)
+   - **Backbone**: XceptionNet (FaceForensics++ benchmark; `FF++_c23.pth` / `FF++_c40.pth`).
+   - **Scope**: Deepfake face forgery detection.
+
+3. **Face-X-Ray Detector (CVPR 2020)**:
+   - **Repository**: [wkq-wukaiqi/Face-X-Ray](https://github.com/wkq-wukaiqi/Face-X-Ray)
+   - **Scope**: Face manipulation boundary detection & pixel-level X-ray heatmap overlay generation.
+
+---
+
+## 📦 Directory & File Structure
+
 ```
-src/
-  components/
-    Layout.jsx       # Sidebar + Topbar shell, renders the active page via <Outlet/>
-    Sidebar.jsx       # Route-aware nav (active link highlighting via NavLink)
-    Topbar.jsx        # Page title + current-case badge + icon actions
-    navConfig.js      # Single source of truth for sidebar links
-    RiskChart.jsx     # Chart.js doughnut, replaces the old inline <script>/getElementById
-  pages/
-    DashboardPage.jsx, CasesPage.jsx, CaseInvestigationPage.jsx, EvidencePage.jsx,
-    ImageForensicsPage.jsx, VideoForensicsPage.jsx, AudioForensicsPage.jsx,
-    MetadataProvenancePage.jsx, CrossModalAnalysisPage.jsx, TimelinePage.jsx,
-    ReportsPage.jsx, AuditLogsPage.jsx, LoginPage.jsx
-  App.jsx             # Route table
+ADIS/
+├── backend/
+│   ├── app.py                     # FastAPI application entrypoint & API routes (/api/health, /api/predict)
+│   ├── requirements.txt           # Backend dependencies (fastapi, uvicorn, torch, torchvision, opencv-python, numpy)
+│   ├── .env.example               # Environment variables configuration
+│   ├── detector/                  # Face-X-Ray model architecture & boundary evaluation
+│   │   ├── DeepFakeMask.py
+│   │   ├── dataset.py
+│   │   ├── evaluate.py
+│   │   └── utils.py
+│   ├── detectors/
+│   │   ├── honggu_xception/       # XceptionNet model package
+│   │   │   ├── xception.py
+│   │   │   └── preprocessing.py
+│   │   └── universal_fake_detect/ # UniversalFakeDetect (CLIP ViT-L/14) package
+│   │       ├── model.py
+│   │       └── preprocessing.py
+│   ├── models/
+│   │   ├── checkpoints/           # Model weight files: FF++_c23.pth, face_xray.pth
+│   │   └── universal_fake_detect/ # Pretrained weight file: fc_weights.pth
+│   ├── services/
+│   │   ├── prediction.py          # Multi-model prediction service manager
+│   │   ├── face_detection.py      # OpenCV Haar Cascade & face cropping
+│   │   └── preprocessing.py       # Image resizing & tensor normalization
+│   ├── uploads/                   # Temporary file upload storage
+│   └── results/                   # Generated boundary heatmap images
+├── src/
+│   ├── components/                # Shared navigation & layout shell
+│   ├── pages/                     # ImageForensicsPage.jsx (Connected to FastAPI backend)
+│   └── App.jsx                    # React Router configuration
 ```
 
-## Getting started
+---
+
+## 🤖 Pretrained Model Checkpoint Setup
+
+The backend loads model weights from the following paths:
+
+1. **UniversalFakeDetect (`fc_weights.pth`)**:
+   - **Placement**: `backend/models/universal_fake_detect/fc_weights.pth` (or `backend/models/checkpoints/fc_weights.pth`)
+   - **Source**: [WisconsinAIVision/UniversalFakeDetect Repository](https://github.com/WisconsinAIVision/UniversalFakeDetect)
+
+2. **HongguLiu XceptionNet (`FF++_c23.pth` / `FF++_c40.pth`)**:
+   - **Placement**: `backend/models/checkpoints/FF++_c23.pth`
+   - **Source**: [HongguLiu/Deepfake-Detection Repository](https://github.com/HongguLiu/Deepfake-Detection)
+
+3. **Face-X-Ray (`face_xray.pth`)**:
+   - **Placement**: `backend/models/checkpoints/face_xray.pth`
+   - **Source**: [wkq-wukaiqi/Face-X-Ray Repository](https://github.com/wkq-wukaiqi/Face-X-Ray)
+
+---
+
+## 🛰️ API Endpoints
+
+### 1. Health Check
+`GET /api/health`
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "universal_fake_detect_loaded": true,
+  "xception_loaded": true,
+  "face_xray_loaded": true,
+  "device": "cpu"
+}
+```
+
+### 2. Multi-Detector Image Prediction
+`POST /api/predict` (Accepts `multipart/form-data` with `image` and optional `detector` parameter)
+
+**Response:**
+```json
+{
+  "success": true,
+  "prediction": "AI_GENERATED",
+  "confidence": 94.72,
+  "face_detected": true,
+  "message": "All available detectors classified this image as likely manipulated/AI-generated.",
+  "heatmap_url": "/results/heatmap_a1b2c3d4e5.png",
+  "results": {
+    "universal_fake_detect": {
+      "detector": "UniversalFakeDetect",
+      "architecture": "CLIP:ViT-L/14",
+      "prediction": "AI_GENERATED",
+      "confidence": 94.72
+    },
+    "xception": {
+      "detector": "XceptionNet (FaceForensics++)",
+      "checkpoint": "FF++_c23.pth",
+      "prediction": "FAKE",
+      "confidence": 91.34
+    },
+    "face_xray": {
+      "detector": "Face-X-Ray",
+      "prediction": "FAKE",
+      "confidence": 89.51
+    }
+  }
+}
+```
+
+---
+
+## ⚡ How to Run
+
+### 1. Start FastAPI Backend
 ```bash
+# Install dependencies
+pip install -r backend/requirements.txt
+
+# Start backend service
+python -m uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### 2. Start Frontend App
+```bash
+# Install Node dependencies
 npm install
+
+# Start Vite dev server
 npm run dev
 ```
 
-## What changed vs. the 13 static prototypes
-- One shared `Layout`/`Sidebar`/`Topbar` instead of each page carrying its own copy —
-  the active nav item now highlights based on the actual route, not a hardcoded class.
-- One `tailwind.config.js` sourced from the design tokens instead of an inline
-  `tailwind.config` `<script>` block duplicated in every HTML file.
-- Clicking a case row (on the Dashboard or Cases page) now actually navigates to
-  `/cases/:caseId` via React Router instead of `href="#"`.
-- The login form is a real controlled component that navigates to `/` on submit.
-- The dashboard's Chart.js doughnut is a proper React component (`RiskChart`) with
-  correct mount/unmount lifecycle, instead of a `<script>` tag calling
-  `document.getElementById`.
+Open `http://localhost:5173/image-forensics` in your browser.
 
-## Known gaps / next steps
-- The original design's sidebar referenced a few modules with no corresponding
-  screen in the exported prototypes — **Comparison**, **Investigation Graph**,
-  **Model Registry**, and **Settings**. These were intentionally left out of the
-  nav rather than linking to dead routes; add a page + route + `navConfig.js`
-  entry for each when you build them.
-- All page content is currently static markup (no live data/API calls) — same as
-  the original prototypes, just now componentized.
-- No auth guard yet — `/login` and the app routes are both reachable directly.
+---
+
+## 📜 Research Attribution & Licenses
+
+- **UniversalFakeDetect**: [MIT License]. Citation: Ojha et al., *"Towards Universal Fake Image Detectors that Generalize Across Generative Models"*, CVPR 2023. Repository: `WisconsinAIVision/UniversalFakeDetect`.
+- **HongguLiu/Deepfake-Detection**: [Apache-2.0 License]. FaceForensics++ benchmark implementation by Honggu Liu.
+- **Face-X-Ray**: Li et al., *"Face X-Ray for More General Face Forgery Detection"*, CVPR 2020.
