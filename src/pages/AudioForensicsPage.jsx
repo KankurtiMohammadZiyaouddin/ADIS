@@ -1,4 +1,6 @@
 import { useState, useRef } from 'react';
+import { saveAnalysisResult } from '../services/analysisStore';
+import { generateSingleReport } from '../services/reportGenerator';
 
 export default function AudioForensicsPage() {
   const [result, setResult] = useState(null);
@@ -82,6 +84,15 @@ export default function AudioForensicsPage() {
 
       setResult(data);
       setHasUploaded(true);
+      // Save to global analysis store for dashboard stats
+      saveAnalysisResult(
+        'audio',
+        selectedFile.name,
+        data.analysis?.classification || 'INCONCLUSIVE',
+        Math.round((data.analysis?.confidence || 0) * 100),
+        false,
+        { sha256: data.evidence?.sha256, model: 'Deepfake-YamNet' }
+      );
     } catch (err) {
       console.error(err);
       setError(err.message || 'Failed to complete audio forensic analysis.');
@@ -89,55 +100,21 @@ export default function AudioForensicsPage() {
       setAnalyzing(false);
     }
   };
-
   const handleExportReport = () => {
     if (!result) return;
     const r = result;
-    const reportText = `==================================================
-ADIS FORENSIC REPORT — AUDIO ANALYSIS
-Advanced Digital Investigation / Forensic Suite
-==================================================
-Analysis ID: ${r.forensic?.analysis_id || 'N/A'}
-Timestamp: ${new Date().toISOString()}
-
-EVIDENCE FILE METADATA
-----------------------
-Filename: ${r.evidence.filename}
-File Size: ${formatSize(r.evidence.file_size_bytes)} (${r.evidence.file_size_bytes} bytes)
-SHA-256 Hash: ${r.evidence.sha256}
-Duration: ${formatDuration(r.evidence.duration_seconds)} (${r.evidence.duration_seconds}s)
-Sample Rate: ${r.evidence.sample_rate} Hz
-Channels: ${r.evidence.channels} (${r.evidence.channels === 1 ? 'Mono' : 'Stereo'})
-
-FORENSIC MODEL INFERENCE
-------------------------
-Classification: ${r.analysis.classification}
-Model Name: ${r.analysis.model}
-Model Version: ${r.analysis.model_version}
-Model Confidence: ${(r.analysis.confidence * 100).toFixed(2)}%
-Processing Time: ${r.analysis.processing_time_ms} ms
-
-EVIDENCE CHAIN & SYSTEM LOG
----------------------------
-Evidence Integrity Check: ${r.forensic.evidence_integrity}
-Secure Temp File Cleanup: ${r.forensic.temporary_file_cleanup ? 'VERIFIED (SUCCESS)' : 'PENDING'}
-
-DISCLAIMER
-----------
-This document compiles predictions and statistical metrics from deep neural network analysis.
-These results must be interpreted as scientific model inferences rather than absolute,
-independent proof of media authenticity.
-==================================================`;
-
-    const blob = new Blob([reportText], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `ADIS-Forensic-Report-${r.evidence.filename.replace(/\\.[^/.]+$/, '')}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    // Build a store-compatible record and generate a real PDF
+    const record = {
+      type:       'audio',
+      filename:   r.evidence?.filename || 'audio_file',
+      verdict:    r.analysis?.classification || 'INCONCLUSIVE',
+      confidence: Math.round((r.analysis?.confidence || 0) * 100),
+      simulated:  false,
+      sha256:     r.evidence?.sha256 || null,
+      model:      r.analysis?.model || 'Deepfake-YamNet',
+      timestamp:  new Date().toISOString(),
+    };
+    generateSingleReport(record, '#ADIS-LIVE');
   };
 
   const isFake = result ? result.analysis.classification === 'FAKE' : false;

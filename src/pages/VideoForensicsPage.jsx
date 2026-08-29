@@ -6,6 +6,7 @@ import {
   analyzeVideoFile,
   checkBackendHealth
 } from '../services/deepfakeService';
+import { saveAnalysisResult } from '../services/analysisStore';
 
 export default function VideoForensicsPage() {
   const [searchParams] = useSearchParams();
@@ -274,6 +275,15 @@ export default function VideoForensicsPage() {
       setVideoList((prev) => [analyzedResult, ...prev]);
       setSelectedVideo(analyzedResult);
       setVerdict(analyzedResult.verdict);
+      // Save to global analysis store for dashboard stats
+      saveAnalysisResult(
+        'video',
+        analyzedResult.originalName || uploadFile.name,
+        analyzedResult.verdict,
+        analyzedResult.confidence,
+        analyzedResult._simulated === true,
+        { sha256: analyzedResult.sha256, model: analyzedResult.modelUsed }
+      );
       setIsAnalyzing(false);
       setUploadModalOpen(false);
       setUploadFile(null);
