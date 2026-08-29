@@ -36,6 +36,7 @@ export default function VideoForensicsPage() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [isMuted, setIsMuted] = useState(false);
   const [activeAnomaly, setActiveAnomaly] = useState(null);
+  const [videoError, setVideoError] = useState(false);
 
   // Inspection Tabs State: 'temporal' | 'frames' | 'faces' | 'heatmaps'
   const [activeTab, setActiveTab] = useState('temporal');
@@ -79,7 +80,11 @@ export default function VideoForensicsPage() {
     }
   }, [selectedVideo]);
 
-  // Video Time Update & Face Tracking Bounding Box Canvas Drawing
+  // Reset videoError when selected video changes
+  useEffect(() => {
+    setVideoError(false);
+  }, [selectedVideo]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -301,6 +306,27 @@ export default function VideoForensicsPage() {
 
   return (
     <main className="flex-1 flex flex-col min-w-0 bg-background h-screen overflow-hidden">
+
+      {/* ── Simulation Mode Warning Banner ─────────────────────────── */}
+      {selectedVideo?._simulated && (
+        <div className="shrink-0 bg-amber-500/15 border-b border-amber-500/40 px-4 py-2.5 flex items-center gap-3">
+          <span className="material-symbols-outlined text-amber-400 text-[20px] shrink-0">warning</span>
+          <div className="flex-1 min-w-0">
+            <span className="text-amber-300 font-semibold text-label-sm">Simulation Mode — Results Are Random</span>
+            <span className="text-amber-200/80 text-label-sm ml-2">
+              The forensic backend is not reachable. These scores are NOT from a real AI model.
+              Start the backend server and re-upload the video to get real results.
+            </span>
+          </div>
+          <button
+            onClick={() => setUploadModalOpen(true)}
+            className="shrink-0 px-3 py-1 bg-amber-500 text-black rounded text-label-sm font-semibold hover:bg-amber-400 transition-colors"
+          >
+            Re-Upload
+          </button>
+        </div>
+      )}
+
       {/* Top Search & Evidence Selector Toolbar */}
       <div className="h-14 px-4 bg-surface border-b border-outline-variant flex items-center justify-between shrink-0 gap-4">
         {/* Left: Video Search Bar */}
@@ -448,17 +474,33 @@ export default function VideoForensicsPage() {
                   ref={videoRef}
                   src={selectedVideo.url}
                   poster={selectedVideo.fallbackThumbnail}
-                  className="max-h-full max-w-full object-contain"
+                  className={`max-h-full max-w-full object-contain ${videoError ? 'hidden' : ''}`}
                   playsInline
                   muted={isMuted}
                   onClick={togglePlay}
-                  onError={() => {
-                    // Sample video failed (CORS / network) – show poster and allow controls to work
-                    if (videoRef.current) {
-                      videoRef.current.poster = selectedVideo.fallbackThumbnail || '';
-                    }
-                  }}
+                  onError={() => setVideoError(true)}
                 />
+
+                {/* No-video fallback when URL fails (e.g. no internet / CORS) */}
+                {videoError && (
+                  <div className="flex flex-col items-center justify-center gap-4 text-center px-6">
+                    <span className="material-symbols-outlined text-[48px] text-outline">videocam_off</span>
+                    <div>
+                      <p className="text-label-md font-semibold text-on-surface-variant">Sample Video Unavailable</p>
+                      <p className="text-body-sm text-outline mt-1 max-w-xs">
+                        The demo video could not be loaded (network or CORS restriction).<br/>
+                        <strong className="text-primary">Upload your own video</strong> using the &ldquo;Analyze Video&rdquo; button to run the deepfake detector.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setUploadModalOpen(true)}
+                      className="mt-1 px-4 py-2 bg-primary text-on-primary rounded-lg text-body-sm font-medium hover:bg-primary/90 flex items-center gap-2"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">upload</span>
+                      Upload Video File
+                    </button>
+                  </div>
+                )}
 
                 {/* Dynamic Facial Mesh & Landmark Tracking Overlay Canvas */}
                 <canvas
