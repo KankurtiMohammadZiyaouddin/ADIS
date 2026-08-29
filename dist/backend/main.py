@@ -1,6 +1,7 @@
 from pathlib import Path
 import shutil
 import tempfile
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,12 +9,13 @@ from fastapi.responses import JSONResponse
 
 from services.audio_detector import analyze_audio
 from services.video_detector import analyze_video
+from services.image_detector import analyze_image
 
 
 app = FastAPI(
     title="ADIS Forensic Suite API",
     version="1.0.0",
-    description="Audio forensic analysis API for ADIS",
+    description="Multimodal Forensic Analysis API for ADIS (Image, Audio, Video)",
 )
 
 
@@ -31,6 +33,7 @@ def root():
     return {
         "message": "ADIS backend is running",
         "service": "ADIS Forensic Suite API",
+        "modalities": ["image", "audio", "video"],
     }
 
 
@@ -38,24 +41,89 @@ def root():
 def health():
     return {
         "status": "healthy",
+        "services": {
+            "image": "ready",
+            "audio": "ready",
+            "video": "ready",
+        }
     }
 
 
-ALLOWED_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac", ".ogg"}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
+# Limits and Whitelists
+ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"}
+MAX_IMAGE_SIZE = 25 * 1024 * 1024  # 25MB limit
+
+ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac", ".ogg"}
+MAX_AUDIO_SIZE = 10 * 1024 * 1024  # 10MB limit
 
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".avi", ".mkv"}
 MAX_VIDEO_SIZE = 150 * 1024 * 1024  # 150MB limit
 
 
-@app.post("/api/audio/analyze")
-async def audio_analyze(audio_file: UploadFile = File(...)):
+# Helper for standard response top-level fields
+def make_standard_envelope(media_type: str, filename: str, result: dict, extra_evidence: dict = None, extra_analysis: dict = None, extra_forensic: dict = None):
+    now_iso = datetime.now(timezone.utc).isoformat()
+    analysis_id = result.get("analysis_id", f"{media_type.upper()}-{int(datetime.now().timestamp())}")
+
+    model_name = result.get("model", "ADIS-Detector")
+    model_version = result.get("model_version", "1.0.0")
+    proc_time = result.get("processing_time_ms", 0)
+
+    envelope = {
+        "success": True,
+        "status": "success",
+        "analysis_id": analysis_id,
+        "media_type": media_type,
+        "filename": filename,
+        "sha256": result.get("sha256", ""),
+        "file_size_bytes": result.get("file_size_bytes", 0),
+        "classification": result.get("classification", "INCONCLUSIVE"),
+        "confidence": result.get("confidence", 0.0),
+        "model": {
+            "name": model_name,
+            "version": model_version
+        },
+        "processing": {
+            "processing_time_ms": proc_time
+        },
+        "timestamp": now_iso,
+        # Preserve legacy nested blocks for frontend backwards compatibility
+        "evidence": {
+            "filename": filename,
+            "file_size_bytes": result.get("file_size_bytes", 0),
+            "sha256": result.get("sha256", ""),
+            **(extra_evidence or {})
+        },
+        "analysis": {
+            "classification": result.get("classification", "INCONCLUSIVE"),
+            "confidence": result.get("confidence", 0.0),
+            "model": model_name,
+            "model_version": model_version,
+            "processing_time_ms": proc_time,
+            **(extra_analysis or {})
+        },
+        "forensic": {
+            "analysis_id": analysis_id,
+            "evidence_integrity": "SHA-256 calculated",
+            "temporary_file_cleanup": True,
+            **(extra_forensic or {})
+        }
+    }
+    return envelope
+
+
+# ---------------------------------------------------------------------------
+# 1. IMAGE FORENSIC ENDPOINT
+# ---------------------------------------------------------------------------
+@app.post("/api/image/analyze")
+async def image_analyze(image_file: UploadFile = File(...)):
     # 1. Validate filename
-    if not audio_file.filename:
+    if not image_file.filename or not image_file.filename.strip():
         return JSONResponse(
             status_code=400,
             content={
                 "success": False,
+                "status": "error",
                 "error": {
                     "code": "MISSING_FILENAME",
                     "message": "No filename was provided in the upload."
@@ -63,88 +131,202 @@ async def audio_analyze(audio_file: UploadFile = File(...)):
             }
         )
 
-    # 2. Validate file extension
-    suffix = Path(audio_file.filename).suffix.lower()
-    if suffix not in ALLOWED_EXTENSIONS:
+    # 2. Validate extension
+    suffix = Path(image_file.filename).suffix.lower()
+    if suffix not in ALLOWED_IMAGE_EXTENSIONS:
         return JSONResponse(
             status_code=400,
             content={
                 "success": False,
+                "status": "error",
                 "error": {
-                    "code": "INVALID_AUDIO_FORMAT",
-                    "message": f"Unsupported file extension: '{suffix}'. Supported formats are: WAV, MP3, M4A, FLAC, OGG."
+                    "code": "INVALID_IMAGE_FORMAT",
+                    "message": f"Unsupported image file extension: '{suffix}'. Supported: JPG, JPEG, PNG, WEBP, BMP, TIFF."
                 }
             }
         )
 
     # 3. Validate file size
     try:
-        audio_file.file.seek(0, 2)
-        file_size = audio_file.file.tell()
-        audio_file.file.seek(0)
-    except Exception as exc:
-        print(f"Failed to query file size: {exc}")
+        image_file.file.seek(0, 2)
+        file_size = image_file.file.tell()
+        image_file.file.seek(0)
+    except Exception:
         file_size = 0
 
-    if file_size > MAX_FILE_SIZE:
+    if file_size == 0:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "status": "error",
+                "error": {
+                    "code": "EMPTY_FILE",
+                    "message": "Uploaded image file is empty (0 bytes)."
+                }
+            }
+        )
+
+    if file_size > MAX_IMAGE_SIZE:
         return JSONResponse(
             status_code=413,
             content={
                 "success": False,
+                "status": "error",
                 "error": {
                     "code": "FILE_TOO_LARGE",
-                    "message": f"File size exceeds the 10MB limit. Uploaded size: {file_size} bytes."
+                    "message": f"Image file size exceeds limit (25MB). Uploaded: {file_size} bytes."
                 }
             }
         )
 
     temp_path = None
-
     try:
-        # 4. Save to a safe temporary file
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=suffix,
-        ) as temp_file:
-            temp_path = Path(temp_file.name)
-            shutil.copyfileobj(audio_file.file, temp_file)
+        # 4. Save to safe temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_path = Path(tmp.name)
+            shutil.copyfileobj(image_file.file, tmp)
 
-        # 5. Run audio forensic analysis
-        result = analyze_audio(str(temp_path))
+        # 5. Execute image analysis
+        result = analyze_image(str(temp_path))
 
-        # 6. Package in official Forensic Response Format
-        response_data = {
-            "success": True,
-            "evidence": {
-                "filename": audio_file.filename,
-                "file_size_bytes": result["file_size_bytes"],
-                "sha256": result["sha256"],
-                "duration_seconds": result["duration_seconds"],
-                "sample_rate": result["sample_rate"],
-                "channels": result["channels"]
-            },
-            "analysis": {
-                "classification": result["classification"],
-                "confidence": result["confidence"],
-                "model": "Deepfake-YamNet",
-                "model_version": "1.0.0",
-                "processing_time_ms": result["processing_time_ms"]
-            },
-            "forensic": {
-                "analysis_id": result["analysis_id"],
-                "evidence_integrity": "SHA-256 calculated",
-                "temporary_file_cleanup": True
-            }
+        # 6. Standardized envelope
+        extra_evidence = {
+            "resolution": result.get("resolution", "N/A"),
+            "width": result.get("width", 0),
+            "height": result.get("height", 0),
+            "format": result.get("format", "N/A"),
+            "color_mode": result.get("color_mode", "N/A"),
+            "mean_intensity": result.get("mean_intensity", 0.0)
         }
-
-        return response_data
+        extra_analysis = {
+            "prob_fake": result.get("prob_fake", 0.0),
+            "prob_real": result.get("prob_real", 0.0)
+        }
+        return make_standard_envelope("image", image_file.filename, result, extra_evidence, extra_analysis)
 
     except ValueError as val_err:
-        print(f"Validation error during audio processing: {val_err}")
         return JSONResponse(
             status_code=422,
             content={
                 "success": False,
+                "status": "error",
+                "error": {
+                    "code": "UNPROCESSABLE_IMAGE",
+                    "message": str(val_err)
+                }
+            }
+        )
+    except Exception as exc:
+        print(f"Unexpected image analysis error: {exc}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "status": "error",
+                "error": {
+                    "code": "INTERNAL_SERVER_ERROR",
+                    "message": "An unexpected error occurred during image forensic analysis."
+                }
+            }
+        )
+    finally:
+        if temp_path and temp_path.exists():
+            try:
+                temp_path.unlink()
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# 2. AUDIO FORENSIC ENDPOINT
+# ---------------------------------------------------------------------------
+@app.post("/api/audio/analyze")
+async def audio_analyze(audio_file: UploadFile = File(...)):
+    if not audio_file.filename or not audio_file.filename.strip():
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "status": "error",
+                "error": {
+                    "code": "MISSING_FILENAME",
+                    "message": "No filename was provided in the upload."
+                }
+            }
+        )
+
+    suffix = Path(audio_file.filename).suffix.lower()
+    if suffix not in ALLOWED_AUDIO_EXTENSIONS:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "status": "error",
+                "error": {
+                    "code": "INVALID_AUDIO_FORMAT",
+                    "message": f"Unsupported file extension: '{suffix}'. Supported: WAV, MP3, M4A, FLAC, OGG."
+                }
+            }
+        )
+
+    try:
+        audio_file.file.seek(0, 2)
+        file_size = audio_file.file.tell()
+        audio_file.file.seek(0)
+    except Exception:
+        file_size = 0
+
+    if file_size == 0:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "status": "error",
+                "error": {
+                    "code": "EMPTY_FILE",
+                    "message": "Uploaded audio file is empty (0 bytes)."
+                }
+            }
+        )
+
+    if file_size > MAX_AUDIO_SIZE:
+        return JSONResponse(
+            status_code=413,
+            content={
+                "success": False,
+                "status": "error",
+                "error": {
+                    "code": "FILE_TOO_LARGE",
+                    "message": f"File size exceeds 10MB limit. Uploaded: {file_size} bytes."
+                }
+            }
+        )
+
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_path = Path(tmp.name)
+            shutil.copyfileobj(audio_file.file, tmp)
+
+        result = analyze_audio(str(temp_path))
+
+        extra_evidence = {
+            "duration_seconds": result.get("duration_seconds", 0.0),
+            "sample_rate": result.get("sample_rate", 0),
+            "channels": result.get("channels", 0)
+        }
+        result["model"] = "Deepfake-YamNet"
+        result["model_version"] = "1.0.0"
+
+        return make_standard_envelope("audio", audio_file.filename, result, extra_evidence)
+
+    except ValueError as val_err:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "success": False,
+                "status": "error",
                 "error": {
                     "code": "UNPROCESSABLE_AUDIO",
                     "message": str(val_err)
@@ -152,48 +334,49 @@ async def audio_analyze(audio_file: UploadFile = File(...)):
             }
         )
     except Exception as exc:
-        print(f"Unexpected server error during audio analysis: {exc}")
+        print(f"Unexpected audio analysis error: {exc}")
         return JSONResponse(
             status_code=500,
             content={
                 "success": False,
+                "status": "error",
                 "error": {
                     "code": "INTERNAL_SERVER_ERROR",
                     "message": "An unexpected error occurred during audio forensic analysis."
                 }
             }
         )
-
     finally:
-        # 7. Clean up the temporary file
         if temp_path and temp_path.exists():
             try:
                 temp_path.unlink()
-            except Exception as clean_exc:
-                print(f"Failed to clean up temporary file {temp_path}: {clean_exc}")
+            except Exception:
+                pass
 
 
+# ---------------------------------------------------------------------------
+# 3. VIDEO FORENSIC ENDPOINT
+# ---------------------------------------------------------------------------
 @app.post("/api/video/analyze")
 async def video_analyze(video_file: UploadFile = File(...)):
-    # 1. Validate filename
-    if not video_file.filename:
+    if not video_file.filename or not video_file.filename.strip():
         return JSONResponse(status_code=400, content={
             "success": False,
+            "status": "error",
             "error": {"code": "MISSING_FILENAME", "message": "No filename provided."}
         })
 
-    # 2. Validate extension
     suffix = Path(video_file.filename).suffix.lower()
     if suffix not in ALLOWED_VIDEO_EXTENSIONS:
         return JSONResponse(status_code=400, content={
             "success": False,
+            "status": "error",
             "error": {
                 "code": "INVALID_VIDEO_FORMAT",
                 "message": f"Unsupported format '{suffix}'. Supported: MP4, WebM, MOV, AVI, MKV."
             }
         })
 
-    # 3. Validate file size
     try:
         video_file.file.seek(0, 2)
         file_size = video_file.file.tell()
@@ -201,79 +384,71 @@ async def video_analyze(video_file: UploadFile = File(...)):
     except Exception:
         file_size = 0
 
+    if file_size == 0:
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "status": "error",
+            "error": {"code": "EMPTY_FILE", "message": "Uploaded video file is empty (0 bytes)."}
+        })
+
     if file_size > MAX_VIDEO_SIZE:
         return JSONResponse(status_code=413, content={
             "success": False,
+            "status": "error",
             "error": {
                 "code": "FILE_TOO_LARGE",
-                "message": f"Video exceeds 150MB limit. Uploaded: {file_size // (1024*1024)} MB."
+                "message": f"Video exceeds 150MB limit. Uploaded: {file_size} bytes."
             }
         })
 
     temp_path = None
     try:
-        # 4. Save to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             temp_path = Path(tmp.name)
             shutil.copyfileobj(video_file.file, tmp)
 
-        # 5. Run video forensic analysis
         result = analyze_video(str(temp_path))
 
-        # 6. Build response
-        response_data = {
-            "success": True,
-            "evidence": {
-                "filename":        video_file.filename,
-                "file_size_bytes": result["file_size_bytes"],
-                "sha256":          result["sha256"],
-                "duration_seconds":result["duration_seconds"],
-                "resolution":      result["resolution"],
-                "fps":             result["fps"],
-                "frame_count":     result["frame_count"],
-            },
-            "analysis": {
-                "classification":    result["classification"],
-                "confidence":        result["confidence"],
-                "model":             result["model"],
-                "model_version":     result["model_version"],
-                "frames_analyzed":   result["frame_count"],
-                "frames_fake":       result["frames_fake"],
-                "frames_real":       result["frames_real"],
-                "processing_time_ms":result["processing_time_ms"],
-            },
-            "forensic": {
-                "analysis_id":   result["analysis_id"],
-                "frame_results": result["frame_results"],
-            }
+        extra_evidence = {
+            "duration_seconds": result.get("duration_seconds", 0.0),
+            "resolution": result.get("resolution", "N/A"),
+            "fps": result.get("fps", 0),
+            "frame_count": result.get("frame_count", 0),
         }
-        return response_data
+        extra_analysis = {
+            "methodology": "Frame-level sampled classification (15 frames)",
+            "frames_analyzed": result.get("frame_count", 0),
+            "frames_fake": result.get("frames_fake", 0),
+            "frames_real": result.get("frames_real", 0),
+        }
+        extra_forensic = {
+            "frame_results": result.get("frame_results", []),
+            "limitation_note": "Frame-level aggregation. Does not represent temporal sequence modeling."
+        }
+
+        return make_standard_envelope("video", video_file.filename, result, extra_evidence, extra_analysis, extra_forensic)
 
     except ValueError as val_err:
-        print(f"Video validation error: {val_err}")
         return JSONResponse(status_code=422, content={
             "success": False,
+            "status": "error",
             "error": {"code": "UNPROCESSABLE_VIDEO", "message": str(val_err)}
         })
     except Exception as exc:
-        print(f"Unexpected error during video analysis: {exc}")
+        print(f"Unexpected video analysis error: {exc}")
         return JSONResponse(status_code=500, content={
             "success": False,
+            "status": "error",
             "error": {"code": "INTERNAL_SERVER_ERROR", "message": "An unexpected error occurred during video analysis."}
         })
     finally:
         if temp_path and temp_path.exists():
             try:
                 temp_path.unlink()
-            except Exception as e:
-                print(f"Failed to clean temp video: {e}")
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
     import uvicorn
-
-    uvicorn.run(
-        "main:app",
-        host="127.0.0.1",
-        port=8000,
-    )
+    uvicorn.run("main:app", host="127.0.0.1", port=8000)

@@ -467,6 +467,89 @@ export async function analyzeVideoFile(file, sequenceLength = 60, progressCallba
 }
 
 /**
+
+ * Perform Image Forensic Analysis via Backend API with Simulation Fallback
+ */
+export async function analyzeImageFile(file, progressCallback) {
+  const imageObjectUrl = URL.createObjectURL(file);
+  const fileHash = await computeFileSha256(file);
+
+  if (progressCallback) progressCallback(20, 'Connecting to ADIS image forensic backend...');
+
+  try {
+    const formData = new FormData();
+    formData.append('image_file', file);
+
+    if (progressCallback) progressCallback(50, 'Running EfficientNet image deepfake detection...');
+
+    const response = await fetch('/api/image/analyze', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (progressCallback) progressCallback(100, 'Analysis complete.');
+
+      return {
+        id: data.analysis_id || `IMG-${Date.now().toString().slice(-4)}`,
+        caseId: '#4492',
+        title: file.name,
+        originalName: file.name,
+        url: imageObjectUrl,
+        fileSize: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+        fileSizeBytes: file.size,
+        sha256: data.sha256 || fileHash,
+        uploadDate: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        verdict: data.classification || 'INCONCLUSIVE',
+        confidence: Math.round((data.confidence || 0) * 100),
+        probFake: Math.round((data.analysis?.prob_fake || 0) * 100),
+        probReal: Math.round((data.analysis?.prob_real || 0) * 100),
+        modelUsed: data.model?.name || 'dima806/deepfake_vs_real_image_detection',
+        resolution: data.evidence?.resolution || 'N/A',
+        format: data.evidence?.format || file.type || 'IMAGE',
+        colorMode: data.evidence?.color_mode || 'RGB',
+        processingTimeMs: data.processing?.processing_time_ms || 0,
+        _simulated: false,
+      };
+    }
+  } catch (err) {
+    console.warn('[ImageForensics] Backend unavailable, using simulation fallback:', err.message);
+  }
+
+  // Simulation Fallback
+  if (progressCallback) progressCallback(70, '[SIMULATION] Running fallback spatial analyzer...');
+  await new Promise((r) => setTimeout(r, 600));
+  if (progressCallback) progressCallback(100, '[SIMULATION] Complete.');
+
+  const isSuspicious = file.name.toLowerCase().includes('fake') || file.name.toLowerCase().includes('edit');
+  const verdict = isSuspicious ? 'FAKE' : (Math.random() > 0.4 ? 'FAKE' : 'REAL');
+  const confidence = verdict === 'FAKE' ? +(85 + Math.random() * 12).toFixed(1) : +(90 + Math.random() * 8).toFixed(1);
+
+  return {
+    id: `IMG-${Date.now().toString().slice(-4)}`,
+    caseId: '#4492',
+    title: file.name,
+    originalName: file.name,
+    url: imageObjectUrl,
+    fileSize: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+    fileSizeBytes: file.size,
+    sha256: fileHash,
+    uploadDate: new Date().toISOString().replace('T', ' ').substring(0, 19),
+    verdict,
+    confidence,
+    probFake: verdict === 'FAKE' ? confidence : +(100 - confidence).toFixed(1),
+    probReal: verdict === 'REAL' ? confidence : +(100 - confidence).toFixed(1),
+    modelUsed: 'dima806/deepfake_vs_real_image_detection (Simulated)',
+    resolution: '1920x1080',
+    format: file.type || 'JPEG',
+    colorMode: 'RGB',
+    processingTimeMs: 450,
+    _simulated: true,
+  };
+}
+
+/**
  * Compute SHA-256 Hash of a File in the browser (samples first 1MB for speed)
  */
 async function computeFileSha256(file) {
@@ -479,3 +562,4 @@ async function computeFileSha256(file) {
     return 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
   }
 }
+

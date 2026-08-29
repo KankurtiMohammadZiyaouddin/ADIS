@@ -86,14 +86,18 @@ export default function DashboardPage() {
               Run your first audio or video forensic analysis and the stats will appear here in real time.
             </p>
           </div>
-          <div className="flex gap-3">
-            <button onClick={() => navigate('/audio-forensics')} className="btn-primary px-4 py-2 rounded text-label-md flex items-center gap-2 bg-primary text-on-primary hover:bg-primary/90 transition-colors">
+          <div className="flex gap-3 flex-wrap justify-center">
+            <button onClick={() => navigate('/image-forensics')} className="px-4 py-2 rounded text-label-md flex items-center gap-2 bg-secondary text-on-secondary hover:bg-secondary/90 transition-colors">
+              <span className="material-symbols-outlined text-[18px]">image</span>Analyze Image
+            </button>
+            <button onClick={() => navigate('/audio-forensics')} className="px-4 py-2 rounded text-label-md flex items-center gap-2 bg-primary text-on-primary hover:bg-primary/90 transition-colors">
               <span className="material-symbols-outlined text-[18px]">graphic_eq</span>Analyze Audio
             </button>
             <button onClick={() => navigate('/video-forensics')} className="px-4 py-2 rounded text-label-md flex items-center gap-2 border border-outline-variant text-on-surface hover:bg-surface-container transition-colors">
               <span className="material-symbols-outlined text-[18px]">videocam</span>Analyze Video
             </button>
           </div>
+
         </div>
       )}
 

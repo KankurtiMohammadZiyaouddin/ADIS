@@ -1,131 +1,275 @@
+import { useState, useRef } from 'react';
+import { analyzeImageFile } from '../services/deepfakeService';
+import { saveAnalysisResult } from '../services/analysisStore';
+
 export default function ImageForensicsPage() {
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [analysisStep, setAnalysisStep] = useState('');
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  const fileInputRef = useRef(null);
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setResult(null);
+    setError(null);
+  };
+
+  const handleStartAnalysis = async () => {
+    if (!selectedFile) return;
+    setIsAnalyzing(true);
+    setError(null);
+    setAnalysisProgress(10);
+    setAnalysisStep('Initializing neural pipeline...');
+
+    try {
+      const res = await analyzeImageFile(selectedFile, (pct, step) => {
+        setAnalysisProgress(pct);
+        setAnalysisStep(step);
+      });
+
+      setResult(res);
+      // Save result to global store for Dashboard & Reports & Cross-Modal
+      saveAnalysisResult(
+        'image',
+        res.originalName || selectedFile.name,
+        res.verdict,
+        res.confidence,
+        res._simulated === true,
+        {
+          sha256: res.sha256,
+          model: res.modelUsed,
+          resolution: res.resolution,
+          format: res.format,
+        }
+      );
+    } catch (err) {
+      console.error('Image analysis failed:', err);
+      setError(err.message || 'Failed to complete image forensic scan.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   return (
-    <main className="flex-1 overflow-auto bg-background p-gutter flex gap-gutter">
+    <main className="flex-1 overflow-auto bg-background p-gutter flex gap-gutter flex-col xl:flex-row">
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileSelect}
+        accept="image/jpeg,image/jpg,image/png,image/webp,image/bmp,image/tiff"
+        className="hidden"
+      />
+
       {/* Center Canvas: Image Comparison */}
       <div className="flex-1 flex flex-col gap-gutter min-w-0">
-        <div className="bg-surface-container-lowest border border-outline-variant rounded-lg flex-1 flex flex-col overflow-hidden">
+        {/* Banner for Simulation Mode */}
+        {result?._simulated && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-amber-400 text-body-sm flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">warning</span>
+            <span>
+              <strong>SIMULATION MODE:</strong> Backend was offline or unreachable. Results are simulated and randomly generated for demo purposes.
+            </span>
+          </div>
+        )}
+
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-lg flex-1 flex flex-col overflow-hidden min-h-[400px]">
           <div className="h-10 border-b border-outline-variant bg-surface-container flex items-center justify-between px-4 shrink-0">
-            <span className="text-label-md text-on-surface">Analysis Canvas: EV-882.jpg</span>
+            <span className="text-label-md text-on-surface">
+              {selectedFile ? `Analysis Canvas: ${selectedFile.name}` : 'Analysis Canvas: Select Image'}
+            </span>
             <div className="flex items-center gap-2">
-              <button className="p-1 hover:bg-surface-container-highest rounded text-on-surface-variant"><span className="material-symbols-outlined" style={{fontSize: 18}}>zoom_in</span></button>
-              <button className="p-1 hover:bg-surface-container-highest rounded text-on-surface-variant"><span className="material-symbols-outlined" style={{fontSize: 18}}>zoom_out</span></button>
-              <button className="p-1 hover:bg-surface-container-highest rounded text-on-surface-variant"><span className="material-symbols-outlined" style={{fontSize: 18}}>center_focus_strong</span></button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="px-3 py-1 bg-surface-container-highest border border-outline-variant rounded text-label-sm text-on-surface hover:bg-surface-container-low transition-colors flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">file_upload</span>
+                Select Image
+              </button>
             </div>
           </div>
-          <div className="flex-1 flex gap-4 p-4 min-h-0 bg-surface">
-            {/* Original Image with Bounding Box */}
-            <div className="flex-1 flex flex-col border border-outline-variant rounded bg-surface-container-lowest relative overflow-hidden group">
-              <div className="absolute top-2 left-2 bg-on-surface/80 text-surface-container-lowest px-2 py-1 rounded text-label-sm z-10">Original (Suspect Region)</div>
-              <img className="w-full h-full object-contain p-2" data-alt="A high-resolution photograph of an urban street scene during daytime. The scene includes pedestrians, a parked car, and shop storefronts. A specific rectangular region near the parked car is highlighted with a bright red bounding box to indicate a suspicious area under forensic investigation. The image is clean, sharp, and typical of digital evidence gathered from a smartphone or CCTV camera." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAzghDlgaeyUL8F-vm52pY9Frqo-u2hE9ogT3KknCYBy78a-EJPq9K-QTQUCwrUGyLd1QXKenueYYy622vx9HxqcbLK8dcU9uZfSgjcEFfaKg4mwdB1xMBB8rl-dB6N95Tq8_3DMG2hNhN6UjO4FmOiSwkxoSUGHk2mlrEEf7yiwd3pWc17pwib-t8GLYBMEQlz38byJI4GDdb_-iNxIcqPP8BuFEjd3VyQ3FOQixY3NK6DzcEQuTk" />
-              {/* Suspicious Bounding Box Simulation */}
-              <div className="absolute border-2 border-error w-32 h-32 top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-error/10 hidden group-hover:block transition-all" />
+
+          <div className="flex-1 flex flex-col lg:flex-row gap-4 p-4 min-h-0 bg-surface">
+            {/* Original Image Display */}
+            <div className="flex-1 flex flex-col border border-outline-variant rounded bg-surface-container-lowest relative overflow-hidden group min-h-[300px]">
+              <div className="absolute top-2 left-2 bg-on-surface/80 text-surface-container-lowest px-2 py-1 rounded text-label-sm z-10">
+                Original Image
+              </div>
+              {previewUrl ? (
+                <img
+                  src={previewUrl}
+                  alt="Uploaded evidence preview"
+                  className="w-full h-full object-contain p-2"
+                />
+              ) : (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full h-full flex flex-col items-center justify-center cursor-pointer p-8 text-center text-on-surface-variant hover:text-on-surface transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[48px] text-outline mb-2">add_photo_alternate</span>
+                  <p className="text-body-md font-medium">Click to select an image for forensic scanning</p>
+                  <p className="text-label-sm opacity-70 mt-1">Supports JPG, PNG, WEBP, BMP, TIFF (Up to 25MB)</p>
+                </div>
+              )}
             </div>
-            {/* Forensic Heatmap */}
-            <div className="flex-1 flex flex-col border border-outline-variant rounded bg-surface-container-lowest relative overflow-hidden">
-              <div className="absolute top-2 left-2 bg-on-surface/80 text-surface-container-lowest px-2 py-1 rounded text-label-sm z-10">Error Level Analysis (ELA)</div>
-              <img className="w-full h-full object-contain p-2 filter contrast-125 saturate-150" data-alt="A highly technical error level analysis (ELA) heat map of the corresponding urban street scene. The overall image is dark, mostly black and deep purple, representing areas of uniform compression. The previously highlighted rectangular region near the parked car glows intensely with bright white, yellow, and red pixels, clearly indicating a high level of manipulation or localized compression inconsistency indicative of digital tampering." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDLVuqNBofXi32qvbqusPM2RQhejmfFdnCWY48Cz5tqg4jb7coYHLIYMHJd6dHuBqoacebjPD0IjH47Ovga7AmXWRAQYIYoLtcWDHQGotI9rTu2tcWeWk5eBNW2R_c29QzHSzeKo9vAh50rLSSnLVCWI8fmxUN0ngzhaxJ-CJLsEqDooQ7as95fJ_gAjr1ooEytqcvKuvFqBHcx2jQlnl3jeiTIfEZbHEh6NfZ7uuZyU8JJiaF2h-A" />
+
+            {/* Error Level Analysis (ELA) / Heatmap View */}
+            <div className="flex-1 flex flex-col border border-outline-variant rounded bg-surface-container-lowest relative overflow-hidden min-h-[300px]">
+              <div className="absolute top-2 left-2 bg-on-surface/80 text-surface-container-lowest px-2 py-1 rounded text-label-sm z-10">
+                Spatial &amp; Compression Heatmap
+              </div>
+              {previewUrl ? (
+                <img
+                  src={previewUrl}
+                  alt="Forensic ELA simulation"
+                  className={`w-full h-full object-contain p-2 ${
+                    result?.verdict === 'FAKE' ? 'filter contrast-150 saturate-200 hue-rotate-90' : 'filter contrast-110'
+                  }`}
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-on-surface-variant">
+                  <span className="material-symbols-outlined text-[48px] text-outline mb-2">blur_on</span>
+                  <p className="text-body-md">Heatmap preview will generate after scan</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
-        {/* Secondary Panel: Metadata & Timeline */}
-        <div className="h-48 flex gap-gutter shrink-0">
-          <div className="flex-1 bg-surface-container-lowest border border-outline-variant rounded-lg flex flex-col overflow-hidden">
-            <div className="h-8 border-b border-outline-variant bg-surface-container flex items-center px-4 text-label-md text-on-surface">
-              EXIF / Metadata Summary
-            </div>
-            <div className="p-3 overflow-y-auto">
-              <table className="w-full text-body-sm font-body-sm text-left">
-                <tbody>
-                  <tr className="border-b border-surface-variant">
-                    <th className="py-1 text-on-surface-variant font-medium w-1/3">Camera Model</th>
-                    <td className="py-1 text-on-surface">iPhone 13 Pro</td>
-                  </tr>
-                  <tr className="border-b border-surface-variant">
-                    <th className="py-1 text-on-surface-variant font-medium">Software</th>
-                    <td className="py-1 text-error font-medium">Adobe Photoshop 2023 (Flagged)</td>
-                  </tr>
-                  <tr className="border-b border-surface-variant">
-                    <th className="py-1 text-on-surface-variant font-medium">Date/Time Original</th>
-                    <td className="py-1 text-on-surface">2023-10-24 14:32:11</td>
-                  </tr>
-                  <tr>
-                    <th className="py-1 text-on-surface-variant font-medium">GPS Location</th>
-                    <td className="py-1 text-on-surface">34.0522° N, 118.2437° W</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+
+        {/* Bottom Panel: Metadata Summary */}
+        <div className="h-44 bg-surface-container-lowest border border-outline-variant rounded-lg flex flex-col overflow-hidden shrink-0">
+          <div className="h-8 border-b border-outline-variant bg-surface-container flex items-center px-4 text-label-md text-on-surface">
+            Image Forensic Metadata Summary
+          </div>
+          <div className="p-3 overflow-y-auto">
+            <table className="w-full text-body-sm font-body-sm text-left">
+              <tbody>
+                <tr className="border-b border-surface-variant">
+                  <th className="py-1 text-on-surface-variant font-medium w-1/3">Filename</th>
+                  <td className="py-1 text-on-surface">{selectedFile?.name || 'No file selected'}</td>
+                </tr>
+                <tr className="border-b border-surface-variant">
+                  <th className="py-1 text-on-surface-variant font-medium">Resolution</th>
+                  <td className="py-1 text-on-surface">{result?.resolution || 'N/A'}</td>
+                </tr>
+                <tr className="border-b border-surface-variant">
+                  <th className="py-1 text-on-surface-variant font-medium">SHA-256 Hash</th>
+                  <td className="py-1 font-mono text-xs text-on-surface truncate" title={result?.sha256}>
+                    {result?.sha256 || 'Calculated during scan'}
+                  </td>
+                </tr>
+                <tr>
+                  <th className="py-1 text-on-surface-variant font-medium">Format / Model</th>
+                  <td className="py-1 text-on-surface">
+                    {result ? `${result.format} (${result.modelUsed})` : 'N/A'}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
+
       {/* Right Sidebar: Analysis Panel */}
-      <div className="w-80 flex flex-col gap-gutter shrink-0">
+      <div className="w-full xl:w-80 flex flex-col gap-gutter shrink-0">
+        {/* Action Button Card */}
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-4">
+          <button
+            onClick={handleStartAnalysis}
+            disabled={!selectedFile || isAnalyzing}
+            className="w-full py-2.5 px-4 bg-primary text-on-primary rounded text-label-md font-semibold hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isAnalyzing ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                Analyzing Image...
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-[18px]">psychology</span>
+                Run Image Deepfake Scan
+              </>
+            )}
+          </button>
+
+          {isAnalyzing && (
+            <div className="mt-3 space-y-1.5">
+              <div className="flex justify-between text-label-sm text-on-surface-variant">
+                <span>{analysisStep}</span>
+                <span>{analysisProgress}%</span>
+              </div>
+              <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+                <div className="bg-primary h-full rounded-full transition-all duration-300" style={{ width: `${analysisProgress}%` }} />
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="mt-3 p-2.5 bg-error/10 border border-error/30 rounded text-error text-body-sm">
+              {error}
+            </div>
+          )}
+        </div>
+
         {/* Probability Card */}
         <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-4">
           <h3 className="text-headline-sm font-headline-sm text-on-surface mb-4">Forensic Assessment</h3>
+
           <div className="mb-6">
             <div className="flex justify-between items-end mb-1">
-              <span className="text-label-md text-on-surface-variant">Manipulation Probability</span>
-              <span className="text-title-lg font-title-lg text-error">87%</span>
+              <span className="text-label-md text-on-surface-variant">Verdict</span>
+              <span className={`text-title-lg font-title-lg ${result?.verdict === 'FAKE' ? 'text-error' : result?.verdict === 'REAL' ? 'text-primary' : 'text-on-surface'}`}>
+                {result ? result.verdict : 'PENDING'}
+              </span>
             </div>
-            <div className="w-full bg-surface-variant rounded-full h-1.5">
-              <div className="bg-error h-1.5 rounded-full" style={{width: '87%'}} />
-            </div>
-          </div>
-          <div className="mb-4">
-            <div className="flex justify-between items-end mb-1">
-              <span className="text-label-md text-on-surface-variant">Model Confidence</span>
-              <span className="text-body-md font-body-md text-primary">84%</span>
-            </div>
-            <div className="w-full bg-surface-variant rounded-full h-1">
-              <div className="bg-primary h-1 rounded-full" style={{width: '84%'}} />
+            <div className="w-full bg-surface-variant rounded-full h-2 overflow-hidden">
+              <div
+                className={`h-2 rounded-full transition-all duration-700 ${result?.verdict === 'FAKE' ? 'bg-error' : 'bg-primary'}`}
+                style={{ width: result ? `${result.confidence}%` : '0%' }}
+              />
             </div>
           </div>
-          <div className="space-y-2 mt-4">
-            <h4 className="text-label-sm text-on-surface-variant uppercase tracking-wider">Detected Anomalies</h4>
-            <div className="flex items-start gap-2 bg-error-container/20 p-2 rounded border border-error-container">
-              <span className="material-symbols-outlined text-error" style={{fontSize: 16}}>warning</span>
-              <div className="text-body-sm font-body-sm text-on-surface">
-                <span className="font-semibold block text-error">Compression Artifacts</span>
-                Localized grid inconsistencies detected at region [X:440, Y:210].
-              </div>
-            </div>
-            <div className="flex items-start gap-2 bg-error-container/20 p-2 rounded border border-error-container">
-              <span className="material-symbols-outlined text-error" style={{fontSize: 16}}>noise_aware</span>
-              <div className="text-body-sm font-body-sm text-on-surface">
-                <span className="font-semibold block text-error">Noise Inconsistency</span>
-                Variance in sensor noise pattern indicates splicing.
-              </div>
-            </div>
-          </div>
-        </div>
-        {/* Face Analysis (AI Action) */}
-        <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-4 flex-1">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-label-md text-on-surface font-semibold">Face Extraction</h3>
-            <button className="bg-secondary text-on-secondary px-3 py-1 rounded text-label-sm hover:opacity-90 transition-opacity">Run Deepfake Scan</button>
-          </div>
+
           <div className="space-y-3">
-            <div className="flex gap-3 items-center p-2 border border-outline-variant rounded bg-surface">
-              <img className="w-12 h-12 rounded object-cover" data-alt="A tight cropped square image of a person's face extracted from a larger scene. The face is slightly blurry but discernible, showing a male subject with neutral expression. The lighting on the face appears slightly unnatural compared to the background, suggesting potential digital alteration or face-swapping." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDu8kGNsvnLRk9MTWpCqWpMjdD6jj6GT_4Q3-EaKl4JU9rSrgaOVQVB3X9DIstFZ9xEhs3wuYrWJrih21PF7MRyCRNCm_R2ixmqO86YnLUWWkWJ3B2-HuRI0RlbF8b7xky52fsZr8QBkHuMKgXGLZX7f7ItiYpBcdMK5CDG1fvutpleemMVboBpQ8xGD1O1yWKSBiFmJBdGIwObnhTbG-kp_apuahpGPBTpGrPDqVHMzICufa3M-G4" />
-              <div className="flex-1">
-                <div className="text-body-sm font-body-sm text-on-surface font-medium">Subject 1 (Target)</div>
-                <div className="text-label-sm text-on-surface-variant">Confidence: Medium</div>
-              </div>
-              <span className="material-symbols-outlined text-outline">more_vert</span>
+            <div className="flex justify-between items-center text-body-sm">
+              <span className="text-on-surface-variant">Confidence Score</span>
+              <span className="font-mono font-semibold text-on-surface">{result ? `${result.confidence}%` : '—'}</span>
             </div>
-            <div className="flex gap-3 items-center p-2 border border-outline-variant rounded bg-surface">
-              <div className="w-12 h-12 rounded bg-surface-variant flex items-center justify-center text-outline">
-                <span className="material-symbols-outlined">person_search</span>
-              </div>
-              <div className="flex-1">
-                <div className="text-body-sm font-body-sm text-on-surface font-medium">No other faces detected</div>
-              </div>
+            <div className="flex justify-between items-center text-body-sm">
+              <span className="text-on-surface-variant">Fake Probability</span>
+              <span className="font-mono text-error">{result ? `${result.probFake}%` : '—'}</span>
+            </div>
+            <div className="flex justify-between items-center text-body-sm">
+              <span className="text-on-surface-variant">Real Probability</span>
+              <span className="font-mono text-primary">{result ? `${result.probReal}%` : '—'}</span>
+            </div>
+            <div className="flex justify-between items-center text-body-sm">
+              <span className="text-on-surface-variant">Processing Time</span>
+              <span className="font-mono text-on-surface-variant">{result ? `${result.processingTimeMs} ms` : '—'}</span>
             </div>
           </div>
+
+          {result && (
+            <div className="mt-4 pt-3 border-t border-outline-variant space-y-2">
+              <h4 className="text-label-sm text-on-surface-variant uppercase tracking-wider">Analysis Notes</h4>
+              <p className="text-body-sm text-on-surface-variant leading-relaxed">
+                {result.verdict === 'FAKE'
+                  ? 'Model detected spatial and structural synthesis patterns consistent with deepfake generation.'
+                  : result.verdict === 'REAL'
+                  ? 'Model verified natural camera sensor characteristics and uniform spatial features.'
+                  : 'Inconclusive score. Manual examination suggested.'}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </main>
   );
 }
-
