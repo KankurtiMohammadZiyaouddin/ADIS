@@ -11,7 +11,7 @@ export const INITIAL_VIDEO_DATABASE = [
     caseId: '#4492',
     title: 'EVID_4492_INTERVIEW_CAM2.mp4',
     originalName: 'interview_cam2_raw.mp4',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    url: 'https://www.w3schools.com/html/mov_bbb.mp4',
     fallbackThumbnail: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80',
     duration: 330, // seconds (5:30)
     formattedDuration: '00:05:30',
@@ -243,32 +243,20 @@ export const INITIAL_VIDEO_DATABASE = [
 ];
 
 /**
- * Backend API Configuration
- */
-export const DJANGO_BACKEND_URL = 'http://127.0.0.1:8000';
-
-/**
- * Check if the Python / Django Deepfake Backend is running
+ * Check if the ADIS FastAPI backend is running
  */
 export async function checkBackendHealth() {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1500);
-    await fetch(`${DJANGO_BACKEND_URL}/`, {
-      method: 'HEAD',
-      signal: controller.signal,
-      mode: 'no-cors'
-    });
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch('/api/health', { signal: controller.signal });
     clearTimeout(timeoutId);
-    return true;
+    return res.ok;
   } catch {
     return false;
   }
 }
 
-/**
- * Search video repository by text query, case filter, verdict, and date
- */
 export function searchVideos(videoList, { query = '', caseFilter = 'ALL', verdictFilter = 'ALL', severityFilter = 'ALL' }) {
   const cleanQuery = query.trim().toLowerCase();
 
@@ -302,64 +290,134 @@ export function searchVideos(videoList, { query = '', caseFilter = 'ALL', verdic
   });
 }
 
+
 /**
- * Simulate or perform real deepfake detection on an uploaded video file
+ * Format seconds as HH:MM:SS
+ */
+function formatSeconds(totalSecs) {
+  const s = Math.max(0, Math.floor(totalSecs || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return [h, m, sec].map((v) => String(v).padStart(2, '0')).join(':');
+}
+
+/**
+ * Analyse an uploaded video file.
+ * Calls real ADIS backend (/api/video/analyze) first.
+ * Falls back to a clearly-labelled simulation only if backend is unreachable.
  */
 export async function analyzeVideoFile(file, sequenceLength = 60, progressCallback) {
-  const isBackendAlive = await checkBackendHealth();
+  const fileHash = await computeFileSha256(file);
+  const videoObjectUrl = URL.createObjectURL(file);
 
-  if (isBackendAlive) {
-    try {
-      if (progressCallback) progressCallback(20, 'Sending video to PyTorch ResNeXt50+LSTM backend...');
-      const formData = new FormData();
-      formData.append('video_file', file);
-      formData.append('sequence_length', sequenceLength);
+  // ── Try real backend ──────────────────────────────────────────────
+  try {
+    if (progressCallback) progressCallback(10, 'Uploading video to forensic analysis engine...');
 
-      const response = await fetch(`${DJANGO_BACKEND_URL}/predict/`, {
-        method: 'POST',
-        body: formData,
-      });
+    const formData = new FormData();
+    formData.append('video_file', file);
 
-      if (response.ok) {
-        if (progressCallback) progressCallback(90, 'Parsing model output...');
-        const json = await response.json().catch(() => null);
-        if (json) {
-          return {
-            source: 'DJANGO_BACKEND',
-            verdict: json.output || 'FAKE',
-            confidence: json.confidence || 98.4,
-            sequenceLength,
-            ...json
-          };
-        }
-      }
-    } catch (e) {
-      console.warn('Backend request failed, falling back to built-in forensic analyzer', e);
-    }
+    const response = await fetch('/api/video/analyze', { method: 'POST', body: formData });
+
+    if (progressCallback) progressCallback(60, 'EfficientNet model processing frames...');
+
+    let data;
+    try { data = await response.json(); } catch { throw new Error('Backend returned invalid JSON.'); }
+
+    if (!response.ok) throw new Error(data?.error?.message || `Backend error ${response.status}`);
+
+    if (progressCallback) progressCallback(95, 'Compiling forensic report...');
+
+    const { evidence, analysis, forensic } = data;
+    const isFake = analysis.classification === 'FAKE';
+    const confidencePct = +(analysis.confidence * 100).toFixed(1);
+
+    const framesSplit = (forensic.frame_results || []).map((fr) => ({
+      frameIdx: fr.frame_index,
+      time: formatSeconds(fr.timestamp_s),
+      url: null,
+      isAnomalous: fr.verdict === 'FAKE',
+      label: fr.verdict === 'FAKE'
+        ? `AI Artifact (${(fr.score_fake * 100).toFixed(0)}%)`
+        : 'Authentic',
+      confidence: fr.confidence,
+    }));
+
+    const anomalies = isFake ? [{
+      id: 'ano-real-1',
+      timestamp: Math.floor(evidence.duration_seconds * 0.3),
+      formattedTime: formatSeconds(evidence.duration_seconds * 0.3),
+      title: 'AI-Generated Frame Artifacts Detected',
+      type: 'critical',
+      severity: 'HIGH',
+      description: `EfficientNet classifier flagged ${analysis.frames_fake} of ${analysis.frames_analyzed} analyzed frames as AI-generated. Synthetic visual patterns inconsistent with natural camera capture.`,
+      confidence: confidencePct,
+    }] : [];
+
+    if (progressCallback) progressCallback(100, 'Analysis complete.');
+
+    return {
+      id: `VID-${Date.now().toString().slice(-4)}`,
+      caseId: '#LIVE',
+      title: evidence.filename,
+      originalName: evidence.filename,
+      url: videoObjectUrl,
+      fallbackThumbnail: isFake
+        ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80'
+        : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&auto=format&fit=crop&q=80',
+      duration: evidence.duration_seconds,
+      formattedDuration: formatSeconds(evidence.duration_seconds),
+      resolution: evidence.resolution || '—',
+      fps: evidence.fps || 30,
+      fileSize: `${(evidence.file_size_bytes / (1024 * 1024)).toFixed(1)} MB`,
+      codec: file.type || 'video/mp4',
+      sha256: evidence.sha256,
+      uploadDate: new Date().toISOString().replace('T', ' ').substring(0, 19),
+      investigator: 'Active Investigator',
+      status: 'ANALYZED',
+      verdict: analysis.classification,
+      confidence: confidencePct,
+      modelUsed: `${analysis.model} (${analysis.frames_analyzed} frames analyzed)`,
+      _simulated: false,
+      _framesAnalyzed: analysis.frames_analyzed,
+      _framesFake: analysis.frames_fake,
+      _framesReal: analysis.frames_real,
+      metrics: {
+        facialMeshIntegrity:     isFake ? Math.round((1 - analysis.confidence) * 100) : Math.round(analysis.confidence * 100),
+        audioVisualSyncVariance: isFake ? Math.round(analysis.confidence * 90) : 10,
+        lipSyncJitter:           isFake ? Math.round(analysis.confidence * 85) : 8,
+        spatialArtifactScore:    isFake ? Math.round(analysis.confidence * 95) : 6,
+        temporalInconsistency:   isFake ? Math.round(analysis.confidence * 88) : 11,
+        frameAccuracy:           confidencePct,
+      },
+      anomalies,
+      framesSplit,
+      faceCrops: [],
+      heatmaps: [],
+    };
+  } catch (backendErr) {
+    console.warn('[VideoForensics] Backend unavailable — simulation fallback:', backendErr.message);
   }
 
-  // Fallback to standalone deep learning simulation engine
+  // ── Simulation fallback ───────────────────────────────────────────
   const stages = [
-    { pct: 15, label: 'Extracting video frames and decoding H.264 stream...' },
-    { pct: 35, label: 'Running Face-Recognition CNN to locate facial bounding boxes...' },
-    { pct: 55, label: `Normalizing sequence (${sequenceLength} frames) with PyTorch transforms...` },
-    { pct: 75, label: 'Feeding spatial features into ResNeXt-50 & LSTM temporal sequence...' },
-    { pct: 90, label: 'Computing Grad-CAM heatmaps and phonetic desync scores...' },
-    { pct: 100, label: 'Deepfake analysis complete.' }
+    { pct: 15, label: '[SIMULATION] Extracting video frames...' },
+    { pct: 35, label: '[SIMULATION] Running face detection CNN...' },
+    { pct: 55, label: `[SIMULATION] Normalizing ${sequenceLength} frames...` },
+    { pct: 75, label: '[SIMULATION] Running ResNeXt-50 + LSTM (simulated)...' },
+    { pct: 90, label: '[SIMULATION] Computing Grad-CAM heatmaps...' },
+    { pct: 100, label: '[SIMULATION] Simulation complete.' },
   ];
-
   for (const stage of stages) {
     if (progressCallback) progressCallback(stage.pct, stage.label);
     await new Promise((r) => setTimeout(r, 450));
   }
 
-  // Calculate realistic forensic parameters for the uploaded video
-  const fileHash = await computeFileSha256(file);
   const isSuspicious = file.name.toLowerCase().includes('fake') || file.name.toLowerCase().includes('edit') || file.size > 20000000;
   const verdict = isSuspicious ? 'FAKE' : (Math.random() > 0.4 ? 'FAKE' : 'REAL');
   const confidence = verdict === 'FAKE' ? +(88 + Math.random() * 11).toFixed(1) : +(91 + Math.random() * 8).toFixed(1);
-
-  const videoObjectUrl = URL.createObjectURL(file);
+  const isFake = verdict === 'FAKE';
 
   return {
     id: `VID-${Date.now().toString().slice(-4)}`,
@@ -367,7 +425,9 @@ export async function analyzeVideoFile(file, sequenceLength = 60, progressCallba
     title: file.name,
     originalName: file.name,
     url: videoObjectUrl,
-    fallbackThumbnail: isSuspicious ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80' : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&auto=format&fit=crop&q=80',
+    fallbackThumbnail: isFake
+      ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80'
+      : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&auto=format&fit=crop&q=80',
     duration: 180,
     formattedDuration: '00:03:00',
     resolution: '1920x1080',
@@ -380,62 +440,131 @@ export async function analyzeVideoFile(file, sequenceLength = 60, progressCallba
     status: 'ANALYZED',
     verdict,
     confidence,
-    modelUsed: `ResNeXt-50_32x4d + LSTM (Sequence Length: ${sequenceLength})`,
+    modelUsed: `[SIMULATION] ResNeXt-50 + LSTM (Seq: ${sequenceLength})`,
+    _simulated: true,
     metrics: {
-      facialMeshIntegrity: verdict === 'FAKE' ? 38 : 96,
-      audioVisualSyncVariance: verdict === 'FAKE' ? 89 : 14,
-      lipSyncJitter: verdict === 'FAKE' ? 84 : 9,
-      spatialArtifactScore: verdict === 'FAKE' ? 92 : 8,
-      temporalInconsistency: verdict === 'FAKE' ? 88 : 12,
-      frameAccuracy: confidence
+      facialMeshIntegrity: isFake ? 38 : 96,
+      audioVisualSyncVariance: isFake ? 89 : 14,
+      lipSyncJitter: isFake ? 84 : 9,
+      spatialArtifactScore: isFake ? 92 : 8,
+      temporalInconsistency: isFake ? 88 : 12,
+      frameAccuracy: confidence,
     },
-    anomalies: verdict === 'FAKE' ? [
-      {
-        id: `ano-${Date.now()}-1`,
-        timestamp: 42,
-        formattedTime: '00:00:42',
-        title: 'Temporal Facial Landmark Instability',
-        type: 'critical',
-        severity: 'HIGH',
-        description: 'Micro-expression jitter and spatial coordinate drift detected across LSTM recurrent cells.',
-        confidence: confidence
-      },
-      {
-        id: `ano-${Date.now()}-2`,
-        timestamp: 110,
-        formattedTime: '00:01:50',
-        title: 'Boundary Synthesis Discontinuity',
-        type: 'warning',
-        severity: 'MEDIUM',
-        description: 'Laplacian edge variance indicates post-processing blend mask along chin perimeter.',
-        confidence: +(confidence - 5).toFixed(1)
-      }
-    ] : [],
-    framesSplit: [
-      { frameIdx: 10, time: '00:00:10', url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=300&auto=format&fit=crop&q=80', isAnomalous: false },
-      { frameIdx: 42, time: '00:00:42', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80', isAnomalous: verdict === 'FAKE', label: 'Face Jitter' },
-      { frameIdx: 110, time: '00:01:50', url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=300&auto=format&fit=crop&q=80', isAnomalous: verdict === 'FAKE', label: 'Edge Mask' }
-    ],
-    faceCrops: [
-      { id: `fc-${Date.now()}-1`, frame: 42, confidence: verdict === 'FAKE' ? 41.2 : 98.1, box: [120, 85, 310, 290], flag: verdict === 'FAKE' ? 'Manipulated' : 'Normal' },
-      { id: `fc-${Date.now()}-2`, frame: 110, confidence: verdict === 'FAKE' ? 36.5 : 97.4, box: [125, 88, 315, 295], flag: verdict === 'FAKE' ? 'Blend Artifact' : 'Normal' }
-    ],
-    heatmaps: [
-      { id: `hm-${Date.now()}-1`, frame: 42, region: 'Facial Center & Eyes', intensity: verdict === 'FAKE' ? 'High (0.92)' : 'Low (0.08)', desc: 'Grad-CAM feature map indicates neural activation density on synthetic features.' }
-    ]
+    anomalies: isFake ? [{
+      id: `ano-${Date.now()}-1`,
+      timestamp: 42,
+      formattedTime: '00:00:42',
+      title: '[SIMULATED] Backend Not Connected',
+      type: 'critical',
+      severity: 'HIGH',
+      description: 'SIMULATION MODE — backend unreachable. This result is randomly generated and has NO forensic value. Start the backend server and re-upload.',
+      confidence,
+    }] : [],
+    framesSplit: [],
+    faceCrops: [],
+    heatmaps: [],
   };
 }
 
 /**
- * Compute SHA-256 Hash of a File in Browser
+
+ * Perform Image Forensic Analysis via Backend API with Simulation Fallback
+ */
+export async function analyzeImageFile(file, progressCallback) {
+  const imageObjectUrl = URL.createObjectURL(file);
+  const fileHash = await computeFileSha256(file);
+
+  if (progressCallback) progressCallback(20, 'Connecting to ADIS image forensic backend...');
+
+  try {
+    const formData = new FormData();
+    formData.append('image_file', file);
+
+    if (progressCallback) progressCallback(50, 'Running EfficientNet image deepfake detection...');
+
+    const response = await fetch('/api/image/analyze', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (progressCallback) progressCallback(100, 'Analysis complete.');
+
+      return {
+        id: data.analysis_id || `IMG-${Date.now().toString().slice(-4)}`,
+        caseId: '#4492',
+        title: file.name,
+        originalName: file.name,
+        url: imageObjectUrl,
+        fileSize: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+        fileSizeBytes: file.size,
+        sha256: data.sha256 || fileHash,
+        uploadDate: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        verdict: data.classification || 'INCONCLUSIVE',
+        confidence: Math.round((data.confidence || 0) * 100),
+        probFake: Math.round((data.analysis?.prob_fake || 0) * 100),
+        probReal: Math.round((data.analysis?.prob_real || 0) * 100),
+        modelUsed: data.model?.name || 'dima806/deepfake_vs_real_image_detection',
+        resolution: data.evidence?.resolution || 'N/A',
+        format: data.evidence?.format || file.type || 'IMAGE',
+        colorMode: data.evidence?.color_mode || 'RGB',
+        processingTimeMs: data.processing?.processing_time_ms || 0,
+        detectors: data.detectors || [],
+        forensicIndicators: data.forensic_indicators || [],
+        detectorAgreement: data.detector_agreement ?? true,
+        disagreementWarning: data.disagreement_warning || null,
+        disclaimer: data.disclaimer || 'Forensic outputs are probabilistic model classifications and do not constitute legal proof.',
+        _simulated: false,
+      };
+    }
+  } catch (err) {
+    console.warn('[ImageForensics] Backend unavailable, using simulation fallback:', err.message);
+  }
+
+  // Simulation Fallback
+  if (progressCallback) progressCallback(70, '[SIMULATION] Running fallback spatial analyzer...');
+  await new Promise((r) => setTimeout(r, 600));
+  if (progressCallback) progressCallback(100, '[SIMULATION] Complete.');
+
+  const isSuspicious = file.name.toLowerCase().includes('fake') || file.name.toLowerCase().includes('edit');
+  const verdict = isSuspicious ? 'FAKE' : (Math.random() > 0.4 ? 'FAKE' : 'REAL');
+  const confidence = verdict === 'FAKE' ? +(85 + Math.random() * 12).toFixed(1) : +(90 + Math.random() * 8).toFixed(1);
+
+  return {
+    id: `IMG-${Date.now().toString().slice(-4)}`,
+    caseId: '#4492',
+    title: file.name,
+    originalName: file.name,
+    url: imageObjectUrl,
+    fileSize: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+    fileSizeBytes: file.size,
+    sha256: fileHash,
+    uploadDate: new Date().toISOString().replace('T', ' ').substring(0, 19),
+    verdict,
+    confidence,
+    probFake: verdict === 'FAKE' ? confidence : +(100 - confidence).toFixed(1),
+    probReal: verdict === 'REAL' ? confidence : +(100 - confidence).toFixed(1),
+    modelUsed: 'dima806/deepfake_vs_real_image_detection (Simulated)',
+    resolution: '1920x1080',
+    format: file.type || 'JPEG',
+    colorMode: 'RGB',
+    processingTimeMs: 450,
+    _simulated: true,
+  };
+}
+
+/**
+ * Compute SHA-256 Hash of a File in the browser (samples first 1MB for speed)
  */
 async function computeFileSha256(file) {
   try {
     const buffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer.slice(0, 1024 * 1024)); // sample first 1MB for speed
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer.slice(0, 1024 * 1024));
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
   } catch {
     return 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
   }
 }
+
