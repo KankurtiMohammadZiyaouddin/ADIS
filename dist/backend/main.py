@@ -509,6 +509,128 @@ async def video_analyze(video_file: UploadFile = File(...)):
                 pass
 
 
+# ---------------------------------------------------------------------------
+# 4. CROSS-MODAL ANALYSIS ENDPOINT
+# ---------------------------------------------------------------------------
+@app.post("/api/cross-modal/analyze")
+async def cross_modal_analyze(payload: dict = Body(...)):
+    """
+    Authoritative backend cross-modal fusion.
+    Accepts previously-stored analysis records for image, audio, and video
+    and runs them through forensic_fusion.py to produce the single source-of-truth verdict.
+
+    Payload schema:
+      {
+        "image": { "classification": str, "confidence": float, "detector_name": str, ... } | null,
+        "audio": { "classification": str, "confidence": float, "detector_name": str, ... } | null,
+        "video": { "classification": str, "confidence": float, "detector_name": str, ... } | null
+      }
+    """
+    from services.forensic_fusion import fuse_detector_results
+    from datetime import datetime, timezone
+
+    image_rec = payload.get("image")
+    audio_rec = payload.get("audio")
+    video_rec = payload.get("video")
+
+    if not any([image_rec, audio_rec, video_rec]):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "status": "error",
+                "error": {
+                    "code": "NO_MODALITIES_PROVIDED",
+                    "message": "At least one modality (image, audio, or video) must be provided."
+                }
+            }
+        )
+
+    # Build a standardized detector list from submitted modality records
+    detector_list = []
+    modality_sources = {}
+
+    MODALITY_ORDER = [("image", image_rec), ("audio", audio_rec), ("video", video_rec)]
+    for modality, rec in MODALITY_ORDER:
+        if not rec:
+            continue
+        # Normalize confidence: accept 0-1 float or 0-100 percentage
+        raw_conf = float(rec.get("confidence", 0.5))
+        if raw_conf > 1.0:
+            raw_conf = raw_conf / 100.0
+        raw_conf = max(0.0, min(1.0, raw_conf))
+
+        classification = str(rec.get("classification", "INCONCLUSIVE")).upper()
+        if classification not in {"FAKE", "REAL", "INCONCLUSIVE"}:
+            classification = "INCONCLUSIVE"
+
+        detector_entry = {
+            "detector_name": rec.get("detector_name") or rec.get("model") or f"{modality.capitalize()} Detector",
+            "model_name": rec.get("model_name") or rec.get("model") or "Unknown",
+            "model_version": rec.get("model_version", "1.0.0"),
+            "framework": rec.get("framework", "Unknown"),
+            "method": rec.get("method", "machine_learning"),
+            "is_ai_model": rec.get("is_ai_model", True),
+            "fallback_used": rec.get("fallback_used", False),
+            "classification": classification,
+            "confidence": raw_conf,
+            "processing_time_ms": rec.get("processing_time_ms", 0),
+            "metadata": {
+                "modality": modality,
+                "filename": rec.get("filename", "unknown"),
+                "sha256": rec.get("sha256"),
+                "timestamp": rec.get("timestamp"),
+            }
+        }
+        detector_list.append(detector_entry)
+        modality_sources[modality] = {
+            "detector_name": detector_entry["detector_name"],
+            "classification": classification,
+            "confidence": raw_conf,
+            "is_ai_model": detector_entry["is_ai_model"],
+            "fallback_used": detector_entry["fallback_used"],
+            "method": detector_entry["method"],
+            "filename": rec.get("filename", "unknown"),
+        }
+
+    # Run authoritative backend fusion
+    fusion = fuse_detector_results("cross_modal", detector_list)
+
+    # Collect any heuristic fallback warnings
+    fallback_warnings = []
+    for modality, src in modality_sources.items():
+        if src.get("fallback_used"):
+            fallback_warnings.append(
+                f"⚠ {modality.capitalize()} analysis used a heuristic fallback. "
+                f"Results should not be interpreted as equivalent to trained model inference."
+            )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    return {
+        "success": True,
+        "status": "success",
+        "analysis_id": f"CROSS-MODAL-{int(datetime.now().timestamp())}",
+        "timestamp": now_iso,
+        "assessment": fusion["primary_classification"],
+        "assessment_confidence": fusion["primary_confidence"],
+        "detector_agreement": fusion["detector_agreement"],
+        "disagreement_warning": fusion["disagreement_warning"],
+        "fallback_warnings": fallback_warnings,
+        "modality_sources": modality_sources,
+        "detectors": fusion["detectors"],
+        "forensic_indicators": fusion.get("forensic_indicators", []),
+        "disclaimer": fusion["disclaimer"],
+        "fusion_method": "authoritative_backend_forensic_fusion",
+        "note": (
+            "This verdict is produced by the authoritative ADIS backend forensic_fusion.py. "
+            "Detectors that strongly disagree will produce an INCONCLUSIVE result. "
+            "All outputs are probabilistic and do not constitute legal proof."
+        )
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000)
+

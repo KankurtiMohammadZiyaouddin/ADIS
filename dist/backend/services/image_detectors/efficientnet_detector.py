@@ -1,6 +1,11 @@
 """
 ADIS EfficientNet Image Deepfake Sub-Detector
-Wraps dima806/deepfake_vs_real_image_detection under the BaseDetector modular interface.
+Wraps dima806/deepfake_vs_real_image_detection under the BaseDetector interface.
+
+FALLBACK TRANSPARENCY:
+When the HuggingFace model is unavailable, a spatial edge-variance heuristic is used.
+The fallback is disclosed explicitly via: method="heuristic", is_ai_model=False, fallback_used=True
+Results from the heuristic path must NEVER be presented as equivalent to model inference.
 """
 
 from pathlib import Path
@@ -30,10 +35,10 @@ def _get_pipeline():
                 "image-classification",
                 model=_MODEL_ID,
                 device=-1,          # CPU inference
-                top_k=None,         # return all class scores
+                top_k=None,
             )
         except Exception as err:
-            print(f"[EfficientNetImageDetector] Hugging Face model load unavailable ({err}). Using local fallback.")
+            print(f"[EfficientNetImageDetector] Model unavailable ({err}). Heuristic fallback will be used and disclosed.")
             _MODEL_LOAD_FAILED = True
             _pipeline = None
     return _pipeline
@@ -42,13 +47,18 @@ def _get_pipeline():
 class EfficientNetImageDetector(BaseDetector):
     """
     Sub-detector wrapping PyTorch EfficientNet image classifier.
+    Falls back to a spatial edge-variance heuristic if the model cannot be loaded.
+    The fallback is explicitly disclosed in the result schema.
     """
 
     def __init__(self):
         super().__init__(
             detector_name="EfficientNet Deepfake Detector",
             model_name=_MODEL_ID,
-            model_version="1.0.0"
+            framework="PyTorch / HuggingFace Transformers",
+            model_version="1.0.0",
+            method="machine_learning",
+            is_ai_model=True,
         )
 
     def run_detection(self, media_path: str) -> tuple:
@@ -73,10 +83,12 @@ class EfficientNetImageDetector(BaseDetector):
                         prob_fake = s
                     elif "REAL" in lbl or "AUTHENTIC" in lbl or "LABEL_1" in lbl:
                         prob_real = s
-            except Exception:
+            except Exception as infer_err:
+                print(f"[EfficientNetImageDetector] Inference failed: {infer_err} — heuristic fallback active.")
                 using_fallback = True
 
         if not pipe or using_fallback:
+            # Heuristic: spatial edge-variance proxy (NOT a trained model)
             norm_var = min(1.0, max(0.05, edge_variance / 2000.0))
             prob_fake = round(0.40 + (norm_var * 0.45), 4)
             prob_real = round(1.0 - prob_fake, 4)
@@ -91,11 +103,19 @@ class EfficientNetImageDetector(BaseDetector):
             classification = "INCONCLUSIVE"
             confidence = max(prob_fake, prob_real)
 
+        is_heuristic = (not pipe or using_fallback)
+
         metadata = {
             "prob_fake": round(prob_fake, 4),
             "prob_real": round(prob_real, 4),
             "edge_variance": round(edge_variance, 2),
-            "inference_backend": "Hugging Face Transformers (CPU)" if (pipe and not using_fallback) else "Spatial Feature Heuristic"
+            "inference_backend": "Hugging Face Transformers (CPU)" if not is_heuristic else "Spatial Edge-Variance Heuristic (AI model unavailable)",
+            "heuristic_warning": (
+                "⚠ Heuristic analysis was used because the trained AI model was unavailable. "
+                "This result should not be interpreted as equivalent to model inference."
+            ) if is_heuristic else None,
+            # Signal to BaseDetector.detect() that fallback was used
+            "_fallback_used": is_heuristic,
         }
 
         return classification, confidence, metadata

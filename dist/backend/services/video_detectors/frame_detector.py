@@ -2,9 +2,12 @@
 ADIS Frame-Based Video Sub-Detector
 Analyzes videos via sampled sequential frames and optical flow inter-frame motion delta.
 
-DOCUMENTATION NOTICE:
-This is a frame-sampled spatial detector with motion delta heuristics.
-It is explicitly NOT a 3D temporal video model (e.g. Swin3D or XceptionNet).
+DOCUMENTATION NOTICE — MANDATORY:
+This is a frame-sampled spatial detector. It is explicitly NOT a 3D temporal deepfake model.
+is_true_temporal_model: False
+
+When the EfficientNet pipeline is unavailable, a Laplacian-variance heuristic is used.
+The fallback is explicitly disclosed via: method="heuristic", is_ai_model=False, fallback_used=True
 """
 
 from pathlib import Path
@@ -31,7 +34,7 @@ def _get_pipeline():
             _pipeline = hf_pipeline(
                 "image-classification",
                 model=_MODEL_ID,
-                device=-1,          # CPU inference
+                device=-1,
                 top_k=None,
             )
         except Exception:
@@ -48,14 +51,18 @@ def compute_temporal_diff(prev_gray, curr_gray):
 
 class FrameVideoDetector(BaseDetector):
     """
-    Sub-detector analyzing sampled frames from a video file.
+    Frame-sampled video sub-detector.
+    is_true_temporal_model: False — explicitly not a 3D temporal deepfake model.
     """
 
     def __init__(self, sample_frames: int = 15):
         super().__init__(
             detector_name="Frame-Sampled Video Detector",
             model_name="EfficientNet Frame Sampler + Optical Flow Delta",
-            model_version="1.5.0"
+            framework="PyTorch / OpenCV Frame Sampler",
+            model_version="1.5.0",
+            method="machine_learning",
+            is_ai_model=True,
         )
         self.sample_frames = sample_frames
 
@@ -74,6 +81,7 @@ class FrameVideoDetector(BaseDetector):
         frame_indices = np.linspace(0, max(0, total_frames - 1), sample_count, dtype=int)
 
         pipe = _get_pipeline()
+        using_heuristic_fallback = (pipe is False or pipe is None)
 
         frame_results = []
         prev_gray = None
@@ -90,14 +98,13 @@ class FrameVideoDetector(BaseDetector):
                 temporal_diffs.append(compute_temporal_diff(prev_gray, gray))
             prev_gray = gray
 
-            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(frame_rgb)
-
             prob_fake = 0.5
             prob_real = 0.5
 
             if pipe and pipe is not False:
                 try:
+                    frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                    pil_img = Image.fromarray(frame_rgb)
                     preds = pipe(pil_img)
                     for p in preds:
                         lbl = p["label"].upper()
@@ -107,8 +114,12 @@ class FrameVideoDetector(BaseDetector):
                         elif "REAL" in lbl or "AUTHENTIC" in lbl or "LABEL_1" in lbl:
                             prob_real = s
                 except Exception:
-                    pass
+                    using_heuristic_fallback = True
+                    lap_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+                    prob_fake = round(min(0.92, max(0.10, lap_var / 1000.0)), 4)
+                    prob_real = round(1.0 - prob_fake, 4)
             else:
+                # Heuristic: Laplacian sharpness variance proxy (NOT a trained model)
                 lap_var = cv2.Laplacian(gray, cv2.CV_64F).var()
                 prob_fake = round(min(0.92, max(0.10, lap_var / 1000.0)), 4)
                 prob_real = round(1.0 - prob_fake, 4)
@@ -162,9 +173,20 @@ class FrameVideoDetector(BaseDetector):
             "frames_real": len(real_frames),
             "aggregation_method": "Frame-Sampled Spatial Majority Vote + Motion Delta",
             "is_true_temporal_model": False,
-            "limitations_note": "System uses frame sampling and motion delta heuristics. It is not a 3D temporal deepfake neural model.",
+            "limitations_note": (
+                "IMPORTANT: System uses frame sampling and inter-frame motion delta heuristics. "
+                "It is NOT a 3D temporal deepfake neural model (e.g. Swin3D, TimeSformer, XceptionNet-LSTM). "
+                "It cannot detect temporal manipulation patterns."
+            ),
             "temporal_flicker_score": temporal_flicker_score,
-            "frame_results": frame_results
+            "frame_results": frame_results,
+            "inference_backend": "Hugging Face Transformers per-frame (CPU)" if not using_heuristic_fallback else "Laplacian Variance Heuristic (AI model unavailable)",
+            "heuristic_warning": (
+                "⚠ Heuristic frame analysis was used because the trained AI model was unavailable. "
+                "This result should not be interpreted as equivalent to model inference."
+            ) if using_heuristic_fallback else None,
+            # Signal to BaseDetector.detect() that fallback was used
+            "_fallback_used": using_heuristic_fallback,
         }
 
         return classification, confidence, metadata

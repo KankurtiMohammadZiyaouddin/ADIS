@@ -8,14 +8,12 @@ import sys
 import soundfile as sf
 import tensorflow as tf
 
-# Import base class
 SERVICES_DIR = Path(__file__).resolve().parents[1]
 if str(SERVICES_DIR) not in sys.path:
     sys.path.insert(0, str(SERVICES_DIR))
 
 from base_detector import BaseDetector
 
-# Add Deepfake-YamNet API path
 YAMNET_API = (
     Path(__file__).resolve().parents[4]
     / "external"
@@ -37,6 +35,7 @@ class YamnetAudioDetector(BaseDetector):
         super().__init__(
             detector_name="YAMNet Audio Detector",
             model_name="Deepfake-YamNet",
+            framework="TensorFlow 2.x SavedModel",
             model_version="1.0.0"
         )
 

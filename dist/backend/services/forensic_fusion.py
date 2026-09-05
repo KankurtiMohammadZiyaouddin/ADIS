@@ -36,23 +36,19 @@ def fuse_detector_results(media_type: str, detector_results: list, forensic_indi
             "disclaimer": "All forensic outputs are probabilistic models and do not constitute legal proof."
         }
 
-    # Filter valid classifications
-    classifications = [d["classification"] for d in detector_results]
-    confidences = [d["confidence"] for d in detector_results]
-
     fake_detectors = [d for d in detector_results if d["classification"] == "FAKE"]
     real_detectors = [d for d in detector_results if d["classification"] == "REAL"]
 
     disagreement_warning = None
     detector_agreement = True
 
-    # 1. Conflict Resolution Logic
+    # Conflict Resolution Logic:
+    # If independent detectors yield opposing verdicts with confidence >= 0.55
     if fake_detectors and real_detectors:
-        # Strong disagreement detected between models!
         fake_max_conf = max(d["confidence"] for d in fake_detectors)
         real_max_conf = max(d["confidence"] for d in real_detectors)
 
-        if fake_max_conf >= 0.60 and real_max_conf >= 0.60:
+        if fake_max_conf >= 0.55 and real_max_conf >= 0.55:
             detector_agreement = False
             primary_classification = "INCONCLUSIVE"
             primary_confidence = round(max(fake_max_conf, real_max_conf), 4)
@@ -69,7 +65,6 @@ def fuse_detector_results(media_type: str, detector_results: list, forensic_indi
 
     elif fake_detectors:
         primary_classification = "FAKE"
-        # Use max confidence (highest certainty detector) rather than naive average
         primary_confidence = max(d["confidence"] for d in fake_detectors)
 
     elif real_detectors:
@@ -78,6 +73,7 @@ def fuse_detector_results(media_type: str, detector_results: list, forensic_indi
 
     else:
         primary_classification = "INCONCLUSIVE"
+        confidences = [d["confidence"] for d in detector_results]
         primary_confidence = max(confidences) if confidences else 0.0
 
     return {

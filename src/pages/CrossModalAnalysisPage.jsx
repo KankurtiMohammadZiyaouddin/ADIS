@@ -39,49 +39,7 @@ function VerdictBadge({ verdict, simulated }) {
   );
 }
 
-// ─── Combined verdict logic (Image + Audio + Video) ───────────────────────
-function computeCrossModal(image, audio, video) {
-  if (!image && !audio && !video) return null;
-
-  let fakeProbability = 0;
-  let sources = [];
-  let verdicts = [];
-
-  if (image) {
-    const iConf = image.verdict === 'FAKE' ? image.confidence : 100 - image.confidence;
-    fakeProbability += image.verdict === 'FAKE' ? iConf / 100 : (100 - iConf) / 100;
-    sources.push({ label: 'Image (Spatial EfficientNet)', conf: image.confidence, verdict: image.verdict });
-    verdicts.push(image.verdict);
-  }
-  if (audio) {
-    const aConf = audio.verdict === 'FAKE' ? audio.confidence : 100 - audio.confidence;
-    fakeProbability += audio.verdict === 'FAKE' ? aConf / 100 : (100 - aConf) / 100;
-    sources.push({ label: 'Audio (Deepfake YamNet)', conf: audio.confidence, verdict: audio.verdict });
-    verdicts.push(audio.verdict);
-  }
-  if (video) {
-    const vConf = video.verdict === 'FAKE' ? video.confidence : 100 - video.confidence;
-    fakeProbability += video.verdict === 'FAKE' ? vConf / 100 : (100 - vConf) / 100;
-    sources.push({ label: 'Video (Frame-Level EfficientNet)', conf: video.confidence, verdict: video.verdict });
-    verdicts.push(video.verdict);
-  }
-
-  fakeProbability = (fakeProbability / sources.length) * 100;
-
-  let combined;
-  if (fakeProbability >= 60)        combined = 'FAKE';
-  else if (fakeProbability <= 35)   combined = 'REAL';
-  else                              combined = 'INCONCLUSIVE';
-
-  // Conflict detection: if some are FAKE and some are REAL
-  const hasFake = verdicts.includes('FAKE');
-  const hasReal = verdicts.includes('REAL');
-  const conflicting = hasFake && hasReal;
-
-  return { fakeProbability, combined, conflicting, sources };
-}
-
-// ─── Main component ───────────────────────────────────────────────────────
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function CrossModalAnalysisPage() {
   const navigate = useNavigate();
   const [history, setHistory]               = useState([]);
@@ -89,10 +47,14 @@ export default function CrossModalAnalysisPage() {
   const [selectedAudioId, setSelectedAudioId] = useState('');
   const [selectedVideoId, setSelectedVideoId] = useState('');
 
+  // Backend fusion state
+  const [fusionResult, setFusionResult]     = useState(null);
+  const [isRunningFusion, setIsRunningFusion] = useState(false);
+  const [fusionError, setFusionError]       = useState(null);
+
   useEffect(() => {
     const h = getAnalysisHistory();
     setHistory(h);
-    // Auto-select most recent of each
     const firstImage = h.find((r) => r.type === 'image');
     const firstAudio = h.find((r) => r.type === 'audio');
     const firstVideo = h.find((r) => r.type === 'video');
@@ -109,15 +71,112 @@ export default function CrossModalAnalysisPage() {
   const selectedAudio = history.find((r) => r.id === selectedAudioId) || null;
   const selectedVideo = history.find((r) => r.id === selectedVideoId) || null;
 
-  const result = computeCrossModal(selectedImage, selectedAudio, selectedVideo);
+  const hasSelection = selectedImage || selectedAudio || selectedVideo;
 
-  // Export combined report as PDF
+  /**
+   * Run backend forensic fusion — the SINGLE source of truth.
+   * The frontend NO LONGER calculates its own verdict.
+   */
+  const runBackendFusion = async () => {
+    if (!hasSelection) return;
+    setIsRunningFusion(true);
+    setFusionError(null);
+    setFusionResult(null);
+
+    // Build modality payload for the backend
+    const payload = {};
+
+    if (selectedImage) {
+      payload.image = {
+        classification: selectedImage.verdict,
+        confidence: selectedImage.confidence,  // % or 0-1, backend normalizes
+        detector_name: selectedImage.model || 'Image Detector',
+        model_name: selectedImage.model || 'EfficientNet',
+        model_version: selectedImage.model_version || '1.0.0',
+        framework: selectedImage.framework || 'PyTorch / HuggingFace Transformers',
+        method: selectedImage.method || 'machine_learning',
+        is_ai_model: selectedImage.is_ai_model !== false,
+        fallback_used: selectedImage.fallback_used || false,
+        filename: selectedImage.filename,
+        sha256: selectedImage.sha256,
+        timestamp: selectedImage.timestamp,
+      };
+    }
+
+    if (selectedAudio) {
+      payload.audio = {
+        classification: selectedAudio.verdict,
+        confidence: selectedAudio.confidence,
+        detector_name: selectedAudio.model || 'Audio Detector',
+        model_name: selectedAudio.model || 'YAMNet',
+        model_version: selectedAudio.model_version || '1.0.0',
+        framework: selectedAudio.framework || 'TensorFlow',
+        method: selectedAudio.method || 'machine_learning',
+        is_ai_model: selectedAudio.is_ai_model !== false,
+        fallback_used: selectedAudio.fallback_used || false,
+        filename: selectedAudio.filename,
+        sha256: selectedAudio.sha256,
+        timestamp: selectedAudio.timestamp,
+      };
+    }
+
+    if (selectedVideo) {
+      payload.video = {
+        classification: selectedVideo.verdict,
+        confidence: selectedVideo.confidence,
+        detector_name: selectedVideo.model || 'Video Detector',
+        model_name: selectedVideo.model || 'Frame-Sampled EfficientNet',
+        model_version: selectedVideo.model_version || '1.5.0',
+        framework: selectedVideo.framework || 'PyTorch / OpenCV',
+        method: selectedVideo.method || 'machine_learning',
+        is_ai_model: selectedVideo.is_ai_model !== false,
+        fallback_used: selectedVideo.fallback_used || false,
+        filename: selectedVideo.filename,
+        sha256: selectedVideo.sha256,
+        timestamp: selectedVideo.timestamp,
+      };
+    }
+
+    try {
+      const response = await fetch('/api/cross-modal/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error?.message || `Backend error ${response.status}`);
+      }
+
+      setFusionResult(data);
+    } catch (err) {
+      setFusionError(`Backend cross-modal fusion failed: ${err.message}. Ensure the ADIS backend is running.`);
+    } finally {
+      setIsRunningFusion(false);
+    }
+  };
+
+  // Auto-run fusion when selection changes
+  useEffect(() => {
+    if (hasSelection) {
+      runBackendFusion();
+    } else {
+      setFusionResult(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedImageId, selectedAudioId, selectedVideoId]);
+
   const handleExport = () => {
-    if (!result) return;
-    generateCrossModalReport(selectedAudio, selectedVideo, result, '#ADIS-LIVE');
+    if (!fusionResult) return;
+    generateCrossModalReport(selectedAudio, selectedVideo, fusionResult, '#ADIS-LIVE');
   };
 
   const noHistory = imageRecords.length === 0 && audioRecords.length === 0 && videoRecords.length === 0;
+
+  const assessment = fusionResult?.assessment;
+  const assessmentConfPct = fusionResult ? Math.round((fusionResult.assessment_confidence || 0) * 100) : 0;
 
   return (
     <main className="flex-1 p-gutter lg:p-container-margin overflow-y-auto bg-background">
@@ -129,17 +188,21 @@ export default function CrossModalAnalysisPage() {
           <p className="text-body-lg font-body-lg text-on-surface-variant mt-2">
             Combine Image, Audio, and Video forensic results for a unified synthetic-media verdict.
           </p>
+          <p className="text-body-sm text-on-surface-variant mt-1 flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[14px] text-primary">verified_user</span>
+            Verdict is computed by the authoritative backend forensic_fusion.py — not by frontend averaging.
+          </p>
         </div>
         <div className="flex gap-3">
           <button
             onClick={handleExport}
-            disabled={!result}
+            disabled={!fusionResult}
             className="px-4 py-2 border border-outline-variant bg-surface text-on-surface rounded text-label-md hover:bg-surface-container transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Export Report
           </button>
           <button
-            onClick={() => { setSelectedImageId(''); setSelectedAudioId(''); setSelectedVideoId(''); }}
+            onClick={() => { setSelectedImageId(''); setSelectedAudioId(''); setSelectedVideoId(''); setFusionResult(null); }}
             className="px-4 py-2 bg-secondary text-on-secondary rounded text-label-md hover:opacity-90 transition-opacity flex items-center gap-2"
           >
             <span className="material-symbols-outlined text-[16px]">refresh</span>
@@ -285,51 +348,77 @@ export default function CrossModalAnalysisPage() {
         </div>
       )}
 
+      {/* ── Loading state ─────────────────────────────────────────── */}
+      {isRunningFusion && (
+        <div className="flex items-center justify-center gap-3 py-10 text-on-surface-variant">
+          <span className="material-symbols-outlined animate-spin text-[24px]">progress_activity</span>
+          <span className="text-body-md">Running authoritative backend forensic fusion…</span>
+        </div>
+      )}
+
+      {/* ── Error state ───────────────────────────────────────────── */}
+      {fusionError && !isRunningFusion && (
+        <div className="mb-6 p-4 bg-error/10 border border-error/30 rounded-lg flex items-start gap-3">
+          <span className="material-symbols-outlined text-error shrink-0">error</span>
+          <div>
+            <p className="text-label-md font-semibold text-error">Fusion Error</p>
+            <p className="text-body-sm text-error/80 mt-1">{fusionError}</p>
+          </div>
+        </div>
+      )}
+
       {/* ── Combined Result ──────────────────────────────────────── */}
-      {result && (
+      {fusionResult && !isRunningFusion && (
         <div className="grid grid-cols-1 md:grid-cols-12 gap-gutter">
 
           {/* Hero: Combined Verdict */}
           <div className={`col-span-1 md:col-span-4 lg:col-span-3 rounded-xl p-6 flex flex-col justify-between border shadow-sm ${
-            result.combined === 'FAKE' ? 'bg-error/5 border-error/20'
-            : result.combined === 'REAL' ? 'bg-primary/5 border-primary/20'
+            assessment === 'FAKE' ? 'bg-error/5 border-error/20'
+            : assessment === 'REAL' ? 'bg-primary/5 border-primary/20'
             : 'bg-surface-container border-outline-variant'
           }`}>
             <div>
               <h3 className="text-headline-sm font-headline-sm text-on-surface flex items-center gap-2">
-                <span className={`material-symbols-outlined ${result.combined === 'FAKE' ? 'text-error' : result.combined === 'REAL' ? 'text-primary' : 'text-outline'}`}>
-                  {result.combined === 'FAKE' ? 'warning' : result.combined === 'REAL' ? 'verified' : 'help'}
+                <span className={`material-symbols-outlined ${assessment === 'FAKE' ? 'text-error' : assessment === 'REAL' ? 'text-primary' : 'text-outline'}`}>
+                  {assessment === 'FAKE' ? 'warning' : assessment === 'REAL' ? 'verified' : 'help'}
                 </span>
                 Combined Assessment
               </h3>
-              <p className="text-body-sm text-on-surface-variant mt-1">Multimodal Manipulation Score</p>
+              <p className="text-body-sm text-on-surface-variant mt-1">Backend Authoritative Verdict</p>
+              <p className="text-[10px] text-on-surface-variant mt-0.5 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[12px] text-primary">verified_user</span>
+                forensic_fusion.py
+              </p>
             </div>
             <div className="mt-8 mb-4">
               <div className="flex items-end gap-2 mb-2">
                 <span className={`text-[48px] font-bold leading-none tracking-tight ${
-                  result.combined === 'FAKE' ? 'text-error' : result.combined === 'REAL' ? 'text-primary' : 'text-on-surface'
+                  assessment === 'FAKE' ? 'text-error' : assessment === 'REAL' ? 'text-primary' : 'text-on-surface'
                 }`}>
-                  {result.fakeProbability.toFixed(0)}<span className="text-[24px]">%</span>
+                  {assessmentConfPct}<span className="text-[24px]">%</span>
                 </span>
               </div>
               <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-700 ${result.combined === 'FAKE' ? 'bg-error' : result.combined === 'REAL' ? 'bg-primary' : 'bg-outline'}`}
-                  style={{ width: `${result.fakeProbability}%` }}
+                  className={`h-full rounded-full transition-all duration-700 ${assessment === 'FAKE' ? 'bg-error' : assessment === 'REAL' ? 'bg-primary' : 'bg-outline'}`}
+                  style={{ width: `${assessmentConfPct}%` }}
                 />
               </div>
               <p className={`text-label-sm mt-2 font-bold uppercase tracking-wider ${
-                result.combined === 'FAKE' ? 'text-error' : result.combined === 'REAL' ? 'text-primary' : 'text-on-surface-variant'
+                assessment === 'FAKE' ? 'text-error' : assessment === 'REAL' ? 'text-primary' : 'text-on-surface-variant'
               }`}>
-                {result.combined === 'FAKE' ? 'High Confidence: Synthetic' : result.combined === 'REAL' ? 'High Confidence: Authentic' : 'Inconclusive — Review Manually'}
+                {assessment === 'FAKE' ? 'High Confidence: Synthetic' : assessment === 'REAL' ? 'High Confidence: Authentic' : 'Inconclusive — Review Manually'}
               </p>
             </div>
+
+            {/* Modality sources summary */}
             <div className="pt-4 border-t border-outline-variant mt-auto space-y-2 text-body-sm">
-              {result.sources.map((s) => (
-                <div key={s.label} className="flex justify-between">
-                  <span className="text-on-surface-variant text-xs">{s.label}</span>
-                  <span className={`font-mono font-semibold ${s.verdict === 'FAKE' ? 'text-error' : 'text-primary'}`}>
-                    {(s.conf / 100).toFixed(2)}
+              {fusionResult.modality_sources && Object.entries(fusionResult.modality_sources).map(([modality, src]) => (
+                <div key={modality} className="flex justify-between">
+                  <span className="text-on-surface-variant text-xs capitalize">{modality}</span>
+                  <span className={`font-mono font-semibold text-xs ${src.classification === 'FAKE' ? 'text-error' : src.classification === 'REAL' ? 'text-primary' : 'text-outline'}`}>
+                    {src.classification} ({Math.round(src.confidence * 100)}%)
+                    {src.fallback_used && ' ⚠'}
                   </span>
                 </div>
               ))}
@@ -338,102 +427,114 @@ export default function CrossModalAnalysisPage() {
 
           {/* Correlation Matrix */}
           <div className="col-span-1 md:col-span-8 lg:col-span-9 bg-surface border border-outline-variant rounded-xl p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
               <h3 className="text-headline-sm font-headline-sm text-on-surface">Cross-Modal Analysis Matrix</h3>
-              {result.conflicting && (
-                <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/15 border border-amber-500/30 rounded-full text-amber-400 text-label-sm font-semibold">
-                  <span className="material-symbols-outlined text-[16px]">report_problem</span>
-                  Modal Conflict Detected
+              <div className="flex gap-2 flex-wrap">
+                {!fusionResult.detector_agreement && (
+                  <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/15 border border-amber-500/30 rounded-full text-amber-400 text-label-sm font-semibold">
+                    <span className="material-symbols-outlined text-[16px]">report_problem</span>
+                    Modal Conflict Detected
+                  </span>
+                )}
+                <span className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/30 rounded-full text-primary text-label-sm font-semibold">
+                  <span className="material-symbols-outlined text-[14px]">verified_user</span>
+                  Backend Fusion
                 </span>
-              )}
+              </div>
             </div>
+
+            {/* Fallback warnings */}
+            {fusionResult.fallback_warnings?.length > 0 && (
+              <div className="mb-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg space-y-1">
+                {fusionResult.fallback_warnings.map((w, i) => (
+                  <p key={i} className="text-body-sm text-amber-200/90">{w}</p>
+                ))}
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr>
-                    {['Modality', 'File', 'Model Verdict', 'Confidence'].map((h) => (
+                    {['Modality', 'File', 'Verdict', 'Confidence', 'Method'].map((h) => (
                       <th key={h} className="p-3 text-label-sm text-on-surface-variant bg-surface-container-low border-b border-outline-variant font-medium">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="text-body-sm font-body-sm text-on-surface">
-                  {/* Image row */}
-                  <tr className="hover:bg-primary/5 border-b border-outline-variant/50 transition-colors">
-                    <td className="p-3 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center">
-                          <span className="material-symbols-outlined text-secondary text-[16px]">image</span>
-                        </div>
-                        <span className="font-medium">Image</span>
-                      </div>
-                    </td>
-                    <td className="p-3 text-on-surface-variant truncate max-w-[140px]" title={selectedImage?.filename}>
-                      {selectedImage ? selectedImage.filename : <span className="italic opacity-50">Not selected</span>}
-                    </td>
-                    <td className="p-3">{selectedImage ? <VerdictBadge verdict={selectedImage.verdict} simulated={selectedImage.simulated} /> : '—'}</td>
-                    <td className="p-3">{selectedImage ? <ConfidenceBar value={selectedImage.confidence} color={selectedImage.verdict === 'FAKE' ? 'bg-error' : 'bg-primary'} /> : '—'}</td>
-                  </tr>
-                  {/* Audio row */}
-                  <tr className="hover:bg-primary/5 border-b border-outline-variant/50 transition-colors">
-                    <td className="p-3 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                          <span className="material-symbols-outlined text-primary text-[16px]">graphic_eq</span>
-                        </div>
-                        <span className="font-medium">Audio</span>
-                      </div>
-                    </td>
-                    <td className="p-3 text-on-surface-variant truncate max-w-[140px]" title={selectedAudio?.filename}>
-                      {selectedAudio ? selectedAudio.filename : <span className="italic opacity-50">Not selected</span>}
-                    </td>
-                    <td className="p-3">{selectedAudio ? <VerdictBadge verdict={selectedAudio.verdict} simulated={selectedAudio.simulated} /> : '—'}</td>
-                    <td className="p-3">{selectedAudio ? <ConfidenceBar value={selectedAudio.confidence} color={selectedAudio.verdict === 'FAKE' ? 'bg-error' : 'bg-primary'} /> : '—'}</td>
-                  </tr>
-                  {/* Video row */}
-                  <tr className="hover:bg-primary/5 border-b border-outline-variant/50 transition-colors">
-                    <td className="p-3 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center">
-                          <span className="material-symbols-outlined text-secondary text-[16px]">videocam</span>
-                        </div>
-                        <span className="font-medium">Video</span>
-                      </div>
-                    </td>
-                    <td className="p-3 text-on-surface-variant truncate max-w-[140px]" title={selectedVideo?.filename}>
-                      {selectedVideo ? selectedVideo.filename : <span className="italic opacity-50">Not selected</span>}
-                    </td>
-                    <td className="p-3">{selectedVideo ? <VerdictBadge verdict={selectedVideo.verdict} simulated={selectedVideo.simulated} /> : '—'}</td>
-                    <td className="p-3">{selectedVideo ? <ConfidenceBar value={selectedVideo.confidence} color={selectedVideo.verdict === 'FAKE' ? 'bg-error' : 'bg-primary'} /> : '—'}</td>
-                  </tr>
+                  {[
+                    { modality: 'image', icon: 'image', color: 'text-secondary', rec: selectedImage },
+                    { modality: 'audio', icon: 'graphic_eq', color: 'text-primary', rec: selectedAudio },
+                    { modality: 'video', icon: 'videocam', color: 'text-secondary', rec: selectedVideo },
+                  ].map(({ modality, icon, color, rec }) => {
+                    const src = fusionResult.modality_sources?.[modality];
+                    return (
+                      <tr key={modality} className="hover:bg-primary/5 border-b border-outline-variant/50 transition-colors">
+                        <td className="p-3 py-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center">
+                              <span className={`material-symbols-outlined ${color} text-[16px]`}>{icon}</span>
+                            </div>
+                            <span className="font-medium capitalize">{modality}</span>
+                          </div>
+                        </td>
+                        <td className="p-3 text-on-surface-variant truncate max-w-[140px]" title={rec?.filename}>
+                          {rec ? rec.filename : <span className="italic opacity-50">Not selected</span>}
+                        </td>
+                        <td className="p-3">
+                          {src ? <VerdictBadge verdict={src.classification} simulated={rec?.simulated} /> : '—'}
+                        </td>
+                        <td className="p-3">
+                          {src ? <ConfidenceBar value={Math.round(src.confidence * 100)} color={src.classification === 'FAKE' ? 'bg-error' : src.classification === 'REAL' ? 'bg-primary' : 'bg-outline'} /> : '—'}
+                        </td>
+                        <td className="p-3 text-label-sm">
+                          {src ? (
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] border ${src.is_ai_model ? 'text-primary border-primary/30 bg-primary/10' : 'text-amber-400 border-amber-500/30 bg-amber-500/10'}`}>
+                              {src.fallback_used ? '⚠ Heuristic' : src.method === 'machine_learning' ? 'AI Model' : src.method}
+                            </span>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {/* Combined row */}
-                  <tr className={`font-semibold ${result.combined === 'FAKE' ? 'bg-error/5' : result.combined === 'REAL' ? 'bg-primary/5' : 'bg-surface-container-low'}`}>
+                  <tr className={`font-semibold ${assessment === 'FAKE' ? 'bg-error/5' : assessment === 'REAL' ? 'bg-primary/5' : 'bg-surface-container-low'}`}>
                     <td className="p-3 py-4" colSpan={2}>
                       <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[16px] text-on-surface-variant">join_inner</span>
-                        <span>Combined Verdict (Multimodal Mean)</span>
+                        <span className="material-symbols-outlined text-[16px] text-primary">verified_user</span>
+                        <span>Backend Fusion Verdict</span>
                       </div>
                     </td>
-                    <td className="p-3"><VerdictBadge verdict={result.combined} simulated={false} /></td>
-                    <td className="p-3"><ConfidenceBar value={result.fakeProbability} color={result.combined === 'FAKE' ? 'bg-error' : result.combined === 'REAL' ? 'bg-primary' : 'bg-outline'} /></td>
+                    <td className="p-3"><VerdictBadge verdict={assessment} simulated={false} /></td>
+                    <td className="p-3"><ConfidenceBar value={assessmentConfPct} color={assessment === 'FAKE' ? 'bg-error' : assessment === 'REAL' ? 'bg-primary' : 'bg-outline'} /></td>
+                    <td className="p-3 text-label-sm">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] border text-primary border-primary/30 bg-primary/10">
+                        forensic_fusion.py
+                      </span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
             </div>
 
-            {/* Conflict explanation */}
-            {result.conflicting && (
+            {/* Disagreement / conflict explanation */}
+            {(fusionResult.disagreement_warning || !fusionResult.detector_agreement) && (
               <div className="mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg flex gap-3">
                 <span className="material-symbols-outlined text-amber-400 shrink-0">report_problem</span>
                 <div>
                   <p className="text-label-sm font-semibold text-amber-300">Modality Conflict — Manual Review Required</p>
                   <p className="text-body-sm text-amber-200/80 mt-1">
-                    The selected evidence modalities returned conflicting verdicts. This often indicates partial manipulation
-                    (e.g., an authentic video track combined with a synthesized voice clone, or spliced image elements).
-                    Perform secondary contextual analysis before final determination.
+                    {fusionResult.disagreement_warning ||
+                      'The selected evidence modalities returned conflicting verdicts. Perform secondary contextual analysis before final determination.'}
                   </p>
                 </div>
               </div>
             )}
+
+            {/* Disclaimer */}
+            <p className="mt-4 text-body-sm text-on-surface-variant/70 italic">
+              {fusionResult.disclaimer}
+            </p>
           </div>
         </div>
       )}

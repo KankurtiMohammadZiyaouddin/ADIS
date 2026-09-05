@@ -14,12 +14,13 @@ export default function VideoForensicsPage() {
 
   // Video Database & Search State
   const [videoList, setVideoList] = useState(INITIAL_VIDEO_DATABASE);
+  // INITIAL_VIDEO_DATABASE is empty — selectedVideo starts null and is set after analysis
   const [selectedVideo, setSelectedVideo] = useState(() => {
     if (initialVideoId) {
       const match = INITIAL_VIDEO_DATABASE.find((v) => v.id === initialVideoId);
       if (match) return match;
     }
-    return INITIAL_VIDEO_DATABASE[0];
+    return INITIAL_VIDEO_DATABASE.length > 0 ? INITIAL_VIDEO_DATABASE[0] : null;
   });
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,7 +34,7 @@ export default function VideoForensicsPage() {
   const canvasRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(selectedVideo.duration || 330);
+  const [duration, setDuration] = useState(selectedVideo?.duration || 0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [isMuted, setIsMuted] = useState(false);
   const [activeAnomaly, setActiveAnomaly] = useState(null);
@@ -43,10 +44,8 @@ export default function VideoForensicsPage() {
   const [activeTab, setActiveTab] = useState('temporal');
 
   // Verdict & Notes
-  const [verdict, setVerdict] = useState(selectedVideo.verdict);
-  const [investigatorNotes, setInvestigatorNotes] = useState(
-    'Facial boundary blending artifacts detected around the jaw perimeter at timestamp 00:02:14. Audio-visual phonetic desync confirms deepfake neural synthesis.'
-  );
+  const [verdict, setVerdict] = useState(selectedVideo?.verdict || null);
+  const [investigatorNotes, setInvestigatorNotes] = useState('');
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [reportCopied, setReportCopied] = useState(false);
 
@@ -440,7 +439,38 @@ export default function VideoForensicsPage() {
       {/* Main Workspace Layout */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Main Forensic Canvas */}
-        <div className="flex-1 p-4 flex gap-4 overflow-hidden">
+        {!selectedVideo ? (
+          <div className="flex-1 p-8 flex flex-col items-center justify-center text-center bg-[#050811]">
+            <div className="bg-surface border border-outline-variant/30 rounded-2xl p-10 max-w-lg flex flex-col items-center gap-6 shadow-2xl">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                <span className="material-symbols-outlined text-[40px]">video_library</span>
+              </div>
+              <div>
+                <h3 className="text-headline-sm font-bold text-on-surface">No Video Selected</h3>
+                <p className="text-body-md text-on-surface-variant mt-2 leading-relaxed">
+                  Start your digital forensic investigation by uploading a video file for analysis, or open the evidence library to inspect previously analyzed records.
+                </p>
+              </div>
+              <div className="flex gap-4 flex-wrap justify-center mt-2">
+                <button
+                  onClick={() => setUploadModalOpen(true)}
+                  className="px-5 py-2.5 bg-primary text-on-primary rounded-xl text-label-md font-medium hover:bg-primary/90 transition-all flex items-center gap-2 shadow-sm"
+                >
+                  <span className="material-symbols-outlined text-[20px]">upload_file</span>
+                  Analyze Video File
+                </button>
+                <button
+                  onClick={() => setIsSearchDrawerOpen(true)}
+                  className="px-5 py-2.5 border border-outline-variant bg-surface text-on-surface rounded-xl text-label-md hover:bg-surface-container transition-colors flex items-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-[20px]">folder_open</span>
+                  Open Evidence Library
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 p-4 flex gap-4 overflow-hidden">
           {/* Left Column: Interactive Video Player & Timeline */}
           <div className="flex-1 flex flex-col gap-3 min-w-0 h-full overflow-hidden">
             {/* Video Player Box */}
@@ -792,103 +822,69 @@ export default function VideoForensicsPage() {
               {/* Tab 1: Temporal & Spatial Metrics */}
               {activeTab === 'temporal' && (
                 <div className="flex-1 overflow-y-auto p-3 space-y-3.5">
-                  {/* Metric 1: Facial Mesh Integrity */}
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-label-sm text-on-surface-variant">
-                        Facial Mesh Integrity
-                      </span>
-                      <span
-                        className={`font-mono text-label-sm font-bold ${
-                          selectedVideo.metrics?.facialMeshIntegrity < 50
-                            ? 'text-error'
-                            : 'text-emerald-400'
-                        }`}
-                      >
-                        {selectedVideo.metrics?.facialMeshIntegrity}%{' '}
-                        {selectedVideo.metrics?.facialMeshIntegrity < 50
-                          ? '(Anomalous)'
-                          : '(Authentic)'}
-                      </span>
+
+                  {/* Heuristic fallback warning */}
+                  {selectedVideo._heuristicWarning && (
+                    <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex gap-2">
+                      <span className="material-symbols-outlined text-amber-400 shrink-0 text-[18px]">warning</span>
+                      <p className="text-label-sm text-amber-300">{selectedVideo._heuristicWarning}</p>
                     </div>
-                    <div className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          selectedVideo.metrics?.facialMeshIntegrity < 50
-                            ? 'bg-error'
-                            : 'bg-emerald-500'
-                        }`}
-                        style={{ width: `${selectedVideo.metrics?.facialMeshIntegrity}%` }}
-                      />
-                    </div>
+                  )}
+
+                  {/* Frame-based detector limitation notice */}
+                  <div className="p-3 bg-surface-container border border-outline-variant rounded-lg flex gap-2">
+                    <span className="material-symbols-outlined text-outline shrink-0 text-[18px]">info</span>
+                    <p className="text-label-sm text-on-surface-variant">
+                      <strong>Detection Method:</strong> Frame-sampled spatial classifier (EfficientNet per-frame + optical flow delta).
+                      This is <strong>not</strong> a 3D temporal deepfake model. Facial mesh integrity, lip-sync jitter, and audio-visual
+                      sync metrics are <strong>not measured</strong> by the current detector.
+                    </p>
                   </div>
 
-                  {/* Metric 2: Audio-Visual Sync Variance */}
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-label-sm text-on-surface-variant">
-                        Audio-Visual Desynchronization
-                      </span>
-                      <span
-                        className={`font-mono text-label-sm font-bold ${
-                          selectedVideo.metrics?.audioVisualSyncVariance > 50
-                            ? 'text-error'
-                            : 'text-emerald-400'
-                        }`}
-                      >
-                        {selectedVideo.metrics?.audioVisualSyncVariance}%{' '}
-                        {selectedVideo.metrics?.audioVisualSyncVariance > 50
-                          ? '(High Variance)'
-                          : '(Synced)'}
-                      </span>
+                  {/* Metric: Frames Analyzed */}
+                  {selectedVideo._framesAnalyzed != null && (
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-label-sm text-on-surface-variant">Frames Analyzed</span>
+                        <span className="font-mono text-label-sm font-bold text-on-surface">
+                          {selectedVideo._framesAnalyzed} frames
+                        </span>
+                      </div>
                     </div>
-                    <div className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          selectedVideo.metrics?.audioVisualSyncVariance > 50
-                            ? 'bg-amber-500'
-                            : 'bg-emerald-500'
-                        }`}
-                        style={{ width: `${selectedVideo.metrics?.audioVisualSyncVariance}%` }}
-                      />
-                    </div>
-                  </div>
+                  )}
 
-                  {/* Metric 3: Spatial Artifact Score (ResNeXt-50) */}
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-label-sm text-on-surface-variant">
-                        ResNeXt-50 Spatial Artifacts
-                      </span>
-                      <span className="font-mono text-label-sm font-bold text-primary">
-                        {selectedVideo.metrics?.spatialArtifactScore}% Artifact Density
-                      </span>
+                  {/* Metric: Frames Flagged FAKE */}
+                  {selectedVideo._framesFake != null && selectedVideo._framesAnalyzed != null && selectedVideo._framesAnalyzed > 0 && (
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-label-sm text-on-surface-variant">Frames Flagged as AI-Generated</span>
+                        <span className={`font-mono text-label-sm font-bold ${
+                          selectedVideo._framesFake > 0 ? 'text-error' : 'text-emerald-400'
+                        }`}>
+                          {selectedVideo._framesFake} / {selectedVideo._framesAnalyzed}
+                          {' '}({Math.round((selectedVideo._framesFake / selectedVideo._framesAnalyzed) * 100)}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            selectedVideo._framesFake > 0 ? 'bg-error' : 'bg-emerald-500'
+                          }`}
+                          style={{ width: `${Math.round((selectedVideo._framesFake / selectedVideo._framesAnalyzed) * 100)}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary rounded-full transition-all"
-                        style={{ width: `${selectedVideo.metrics?.spatialArtifactScore}%` }}
-                      />
-                    </div>
-                  </div>
+                  )}
 
-                  {/* Metric 4: LSTM Temporal Sequence Continuity */}
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-label-sm text-on-surface-variant">
-                        LSTM Temporal Inconsistency
-                      </span>
-                      <span className="font-mono text-label-sm font-bold text-amber-400">
-                        {selectedVideo.metrics?.temporalInconsistency}% Inconsistency
-                      </span>
+                  {/* Metrics not measured by the current detector */}
+                  {(['Facial Mesh Integrity', 'Audio-Visual Synchronization', 'Lip-Sync Jitter', 'LSTM Temporal Inconsistency']).map((label) => (
+                    <div key={label}>
+                      <div className="flex justify-between items-center">
+                        <span className="text-label-sm text-on-surface-variant">{label}</span>
+                        <span className="text-label-sm text-outline italic">Not measured by frame-based detector</span>
+                      </div>
                     </div>
-                    <div className="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-amber-400 rounded-full transition-all"
-                        style={{ width: `${selectedVideo.metrics?.temporalInconsistency}%` }}
-                      />
-                    </div>
-                  </div>
+                  ))}
 
                   {/* Flagged Anomalies Mini-List */}
                   <div className="pt-2 border-t border-outline-variant">
@@ -1140,6 +1136,7 @@ export default function VideoForensicsPage() {
             </div>
           </div>
         </div>
+      )}
 
         {/* Video Evidence Repository Drawer (Slide-out) */}
         {isSearchDrawerOpen && (
@@ -1180,7 +1177,7 @@ export default function VideoForensicsPage() {
             <div className="flex-1 overflow-y-auto p-2 space-y-2">
               {filteredVideos.length ? (
                 filteredVideos.map((v) => {
-                  const isSelected = selectedVideo.id === v.id;
+                  const isSelected = selectedVideo?.id === v.id;
                   const isFake = v.verdict === 'FAKE';
                   return (
                     <div
