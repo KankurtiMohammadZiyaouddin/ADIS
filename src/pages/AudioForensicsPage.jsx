@@ -149,13 +149,13 @@ export default function AudioForensicsPage() {
       <div className="mb-6 flex justify-between items-end">
         <div>
           <h2 className="text-headline-md font-headline-md text-on-surface mb-1">
-            {result ? result.evidence.filename : 'EVD-883-AUDIO.wav'}
+            {result ? result.evidence.filename : 'No File Selected'}
           </h2>
           <p className="text-body-sm font-body-sm text-on-surface-variant flex items-center gap-2">
-            <span className="material-symbols-outlined text-[16px]">schedule</span> 
-            Duration: {result ? formatDuration(result.evidence.duration_seconds) : '00:02:45'} | 
-            <span className="material-symbols-outlined text-[16px]">mic</span> 
-            {result ? `${result.evidence.sample_rate / 1000} kHz, ${result.evidence.channels === 1 ? 'Mono' : 'Stereo'}` : '44.1 kHz, 16-bit Mono'}
+            <span className="material-symbols-outlined text-[16px]">schedule</span>
+            Duration: {result ? formatDuration(result.evidence.duration_seconds) : '--'} |
+            <span className="material-symbols-outlined text-[16px]">mic</span>
+            {result ? `${result.evidence.sample_rate / 1000} kHz, ${result.evidence.channels === 1 ? 'Mono' : 'Stereo'}` : '-- kHz'}
           </p>
         </div>
         <div className="flex gap-2">
@@ -232,17 +232,6 @@ export default function AudioForensicsPage() {
                   );
                 })}
               </div>
-              {/* Scrubber — only if real analysis returned FAKE */}
-              {showAnomalyUI && (
-                <div className="absolute top-0 bottom-0 left-[45%] w-px bg-error z-10 flex flex-col items-center group cursor-ew-resize">
-                  <div className="w-2 h-2 bg-error rounded-full -mt-1" />
-                  <div className="absolute -top-6 bg-surface-container-highest text-on-surface text-label-sm px-1 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">00:00:55</div>
-                </div>
-              )}
-              {/* Highlight Region — only if real analysis returned FAKE */}
-              {showAnomalyUI && (
-                <div className="absolute top-0 bottom-0 left-[40%] w-[15%] bg-error/10 border-x border-error/50 z-0" />
-              )}
               {/* Idle state — before any upload */}
               {!hasUploaded && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -266,17 +255,11 @@ export default function AudioForensicsPage() {
             >
               {/* Simulated Heatmap Texture (Using CSS pattern instead of image) */}
               <div className="absolute inset-0 opacity-40 mix-blend-overlay" style={{backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.1) 2px, rgba(255,255,255,0.1) 4px)', backgroundSize: '100% 4px'}} />
-              {/* Specific Frequency Anomaly Highlight */}
-              {showAnomalyUI && (
-                <div className="absolute top-[30%] left-[40%] w-[15%] h-[20%] border border-error bg-error/20 rounded-sm pointer-events-none z-10">
-                  <span className="absolute -top-5 right-0 text-error text-label-sm bg-surface-container-lowest px-1 rounded border border-error">Phase discontinuity</span>
-                </div>
-              )}
-              {result && !isFake && (
-                <div className="absolute inset-0 flex items-center justify-center p-4 text-center pointer-events-none">
-                  <span className="text-success text-label-md bg-surface-container-lowest px-3 py-1.5 rounded border border-success flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                    Spectrograph harmonic frequencies verified authentic.
+              {/* Overlay: no fabricated annotations — spectrogram is visual only */}
+              {!hasUploaded && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <span className="text-on-surface-variant text-body-sm bg-surface-container-lowest px-3 py-1.5 rounded border border-outline-variant">
+                    Upload an audio file to visualise spectrogram
                   </span>
                 </div>
               )}
@@ -325,86 +308,34 @@ export default function AudioForensicsPage() {
               </div>
             </div>
             <p className="text-body-sm font-body-sm text-on-surface-variant text-center mt-2">
-              {result 
-                ? (isFake 
-                    ? `Model prediction: FAKE. Synthetic speech signatures matched model Deepfake-YamNet with ${(result.analysis.confidence * 100).toFixed(1)}% confidence. Automated result; requires contextual forensic assessment.` 
+              {result
+                ? (isFake
+                    ? `Model prediction: FAKE. Synthetic speech signatures matched model Deepfake-YamNet with ${(result.analysis.confidence * 100).toFixed(1)}% confidence. Automated result; requires contextual forensic assessment.`
                     : `Model prediction: REAL. Authentic speech characteristics verified by model Deepfake-YamNet with ${(result.analysis.confidence * 100).toFixed(1)}% confidence. Automated result; requires contextual forensic assessment.`)
-                : 'Deepfake generation signatures detected in high-frequency spectral bands.'}
+                : 'Upload an audio file and run AI Deep Scan to begin analysis.'}
             </p>
           </div>
-          {/* Speaker Consistency */}
+          {/* Speaker Consistency — not measured by current detector */}
           <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-padding-default">
             <h3 className="text-title-lg font-title-lg text-on-surface mb-3 flex items-center gap-2">
               <span className="material-symbols-outlined text-[20px] text-primary">record_voice_over</span>
               Speaker Consistency
             </h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-body-sm font-body-sm">
-                <span className="text-on-surface-variant">Primary Speaker Profile</span>
-                <span className="text-on-surface font-medium">{isFake ? 'Match: 45%' : 'Match: 98%'}</span>
-              </div>
-              <div className="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full ${isFake ? 'bg-error' : 'bg-success'}`} 
-                  style={{width: isFake ? '45%' : '98%'}} 
-                />
-              </div>
-              {isFake ? (
-                <div className="mt-4 p-3 bg-error-container/30 border border-error/20 rounded text-body-sm font-body-sm text-on-surface">
-                  <span className="font-semibold text-error block mb-1">Anomaly Detected</span>
-                  Vocal tract resonance mismatch detected between [00:00:55] and [00:01:20].
-                </div>
-              ) : (
-                <div className="mt-4 p-3 bg-success-container/30 border border-success/20 rounded text-body-sm font-body-sm text-on-surface">
-                  <span className="font-semibold text-success block mb-1">Consistency Verified</span>
-                  Vocal tract resonance profile is continuous without splice anomalies.
-                </div>
-              )}
+            <div className="p-3 bg-surface-container border border-outline-variant rounded text-body-sm font-body-sm text-on-surface-variant flex items-start gap-2">
+              <span className="material-symbols-outlined text-[16px] mt-0.5 shrink-0">info</span>
+              <span>Not measured — speaker verification requires a reference voiceprint and is not performed by the current YAMNet deepfake classifier.</span>
             </div>
           </div>
-          {/* Prosody Flags */}
+          {/* Prosody Analysis — not measured by current detector */}
           <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-padding-default flex-1">
             <h3 className="text-title-lg font-title-lg text-on-surface mb-3 flex items-center gap-2">
               <span className="material-symbols-outlined text-[20px] text-secondary">trending_up</span>
               Prosody Analysis
             </h3>
-            <ul className="space-y-2">
-              {isFake ? (
-                <>
-                  <li className="flex gap-2 items-start text-body-sm font-body-sm p-2 bg-surface rounded border border-outline-variant">
-                    <span className="material-symbols-outlined text-[16px] text-error mt-0.5">warning</span>
-                    <div>
-                      <span className="font-medium text-on-surface block">Unnatural Pitch Contours</span>
-                      <span className="text-on-surface-variant text-label-sm">Absence of typical micro-tremors in sustained vowels.</span>
-                    </div>
-                  </li>
-                  <li className="flex gap-2 items-start text-body-sm font-body-sm p-2 bg-surface rounded border border-outline-variant">
-                    <span className="material-symbols-outlined text-[16px] text-primary mt-0.5">info</span>
-                    <div>
-                      <span className="font-medium text-on-surface block">Rhythm Regularity</span>
-                      <span className="text-on-surface-variant text-label-sm">Slightly more rhythmic than baseline human speech.</span>
-                    </div>
-                  </li>
-                </>
-              ) : (
-                <>
-                  <li className="flex gap-2 items-start text-body-sm font-body-sm p-2 bg-surface rounded border border-outline-variant">
-                    <span className="material-symbols-outlined text-[16px] text-success mt-0.5">check_circle</span>
-                    <div>
-                      <span className="font-medium text-on-surface block">Natural Pitch Variations</span>
-                      <span className="text-on-surface-variant text-label-sm">Organic fluctuations and pitch micro-tremors are present.</span>
-                    </div>
-                  </li>
-                  <li className="flex gap-2 items-start text-body-sm font-body-sm p-2 bg-surface rounded border border-outline-variant">
-                    <span className="material-symbols-outlined text-[16px] text-success mt-0.5">check_circle</span>
-                    <div>
-                      <span className="font-medium text-on-surface block">Authentic Conversational Rhythm</span>
-                      <span className="text-on-surface-variant text-label-sm">Natural speech cadence, pauses, and stress distribution.</span>
-                    </div>
-                  </li>
-                </>
-              )}
-            </ul>
+            <div className="p-3 bg-surface-container border border-outline-variant rounded text-body-sm font-body-sm text-on-surface-variant flex items-start gap-2">
+              <span className="material-symbols-outlined text-[16px] mt-0.5 shrink-0">info</span>
+              <span>Not measured — pitch contour and rhythm analysis are not performed by the current detector. These metrics require a dedicated prosody model.</span>
+            </div>
           </div>
         </div>
       </div>
@@ -434,73 +365,17 @@ export default function AudioForensicsPage() {
                 </td>
               </tr>
             ) : showAnomalyUI ? (
-              <>
-                <tr className="border-b border-outline-variant hover:bg-primary/5 transition-colors">
-                  <td className="py-3 px-4 font-mono text-on-surface-variant">00:00:10 - 00:00:45</td>
-                  <td className="py-3 px-4">Baseline Speech</td>
-                  <td className="py-3 px-4 text-on-surface-variant">Natural breath sounds, consistent room tone.</td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-primary h-full" style={{width: '12%'}} />
-                      </div>
-                      <span className="text-label-sm">12%</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-center">
-                    <button className="text-on-surface-variant hover:text-primary"><span className="material-symbols-outlined text-[18px]">play_arrow</span></button>
-                  </td>
-                </tr>
-                <tr className="border-b border-outline-variant bg-error/5 hover:bg-error/10 transition-colors">
-                  <td className="py-3 px-4 font-mono text-error font-medium">00:00:55 - 00:01:20</td>
-                  <td className="py-3 px-4 font-medium">Suspect Inject</td>
-                  <td className="py-3 px-4">Phase discontinuity at splice point; synthetic high-frequency artifacts.</td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-error h-full" style={{width: '96%'}} />
-                      </div>
-                      <span className="text-label-sm text-error font-bold">{result ? confidencePercent : 96}%</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-center">
-                    <button className="text-primary hover:text-primary-container"><span className="material-symbols-outlined text-[18px]">play_circle</span></button>
-                  </td>
-                </tr>
-                <tr className="hover:bg-primary/5 transition-colors">
-                  <td className="py-3 px-4 font-mono text-on-surface-variant">00:01:25 - 00:02:45</td>
-                  <td className="py-3 px-4">Baseline Speech</td>
-                  <td className="py-3 px-4 text-on-surface-variant">Return to baseline profile characteristics.</td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-primary h-full" style={{width: '15%'}} />
-                      </div>
-                      <span className="text-label-sm">15%</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-center">
-                    <button className="text-on-surface-variant hover:text-primary"><span className="material-symbols-outlined text-[18px]">play_arrow</span></button>
-                  </td>
-                </tr>
-              </>
+              <tr>
+                <td colSpan={5} className="py-6 px-4 text-center text-on-surface-variant text-body-sm">
+                  <span className="material-symbols-outlined text-[16px] align-middle mr-1">info</span>
+                  Segment-level timestamps are not measured by the current detector. Overall classification: <span className="font-semibold text-error">FAKE</span> at {confidencePercent}% confidence — see YAMNet result above.
+                </td>
+              </tr>
             ) : showRealUI ? (
-              <tr className="hover:bg-primary/5 transition-colors">
-                <td className="py-3 px-4 font-mono text-on-surface-variant">
-                  00:00:00 - {result ? formatDuration(result.evidence.duration_seconds) : 'End'}
-                </td>
-                <td className="py-3 px-4 font-medium text-success">Continuous Vocal Input</td>
-                <td className="py-3 px-4 text-on-surface-variant">Continuous harmonic frequencies; ambient environment noise is consistent.</td>
-                <td className="py-3 px-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-24 bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-success h-full" style={{width: `${syntheticPercent}%`}} />
-                    </div>
-                    <span className="text-label-sm">{syntheticPercent}%</span>
-                  </div>
-                </td>
-                <td className="py-3 px-4 text-center">
-                  <button className="text-on-surface-variant hover:text-success"><span className="material-symbols-outlined text-[18px]">play_arrow</span></button>
+              <tr>
+                <td colSpan={5} className="py-6 px-4 text-center text-on-surface-variant text-body-sm">
+                  <span className="material-symbols-outlined text-[16px] align-middle mr-1">info</span>
+                  Segment-level analysis is not performed by the current detector. Overall classification: <span className="font-semibold text-success">REAL</span> at {syntheticPercent}% confidence — see YAMNet result above.
                 </td>
               </tr>
             ) : null}

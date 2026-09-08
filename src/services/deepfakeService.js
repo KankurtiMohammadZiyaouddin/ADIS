@@ -160,16 +160,10 @@ export async function analyzeVideoFile(file, sequenceLength = 60, progressCallba
       confidence: fr.confidence,
     }));
 
-    const anomalies = isFake ? [{
-      id: 'ano-real-1',
-      timestamp: Math.floor((evidence.duration_seconds || 0) * 0.3),
-      formattedTime: formatSeconds((evidence.duration_seconds || 0) * 0.3),
-      title: 'AI-Generated Frame Artifacts Detected',
-      type: 'critical',
-      severity: 'HIGH',
-      description: `Frame-sampled EfficientNet classifier flagged ${analysis.frames_fake} of ${analysis.frames_analyzed} analyzed frames as AI-generated. Note: this is a frame-based detector, not a true temporal deepfake model.`,
-      confidence: confidencePct,
-    }] : [];
+    // FORENSIC INTEGRITY: Temporal anomaly timestamps are NOT measured by the
+    // frame-based detector. No fabricated splice points are injected here.
+    // The verdict and per-frame counts are reported at the file level only.
+    const anomalies = [];
 
     if (progressCallback) progressCallback(100, 'Analysis complete.');
 

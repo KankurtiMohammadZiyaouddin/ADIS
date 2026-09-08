@@ -931,11 +931,11 @@ export default function VideoForensicsPage() {
                           </div>
                         ))
                       ) : (
-                        <div className="p-3 text-center text-body-sm text-emerald-400 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-                          <span className="material-symbols-outlined text-[20px] block mb-1">
-                            verified
-                          </span>
-                          No critical anomalies or deepfake signatures detected.
+                        <div className="p-3 text-center text-body-sm text-on-surface-variant bg-surface-container rounded-lg border border-outline-variant">
+                          <span className="material-symbols-outlined text-[20px] block mb-1">info</span>
+                          {selectedVideo.verdict === 'FAKE'
+                            ? 'Temporal splice-point detection is not measured by the frame-based detector. See overall verdict above.'
+                            : 'No anomalies flagged — see overall classification above.'}
                         </div>
                       )}
                     </div>
@@ -954,32 +954,36 @@ export default function VideoForensicsPage() {
                       {selectedVideo.framesSplit?.length || 0} Keyframes
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {selectedVideo.framesSplit?.map((f, idx) => (
-                      <div
-                        key={idx}
-                        className={`rounded-lg border overflow-hidden bg-surface-container-low flex flex-col relative group ${
-                          f.isAnomalous ? 'border-error ring-1 ring-error/50' : 'border-outline-variant'
-                        }`}
-                      >
-                        <img
-                          src={f.url}
-                          alt={`Frame ${f.frameIdx}`}
-                          className="w-full h-24 object-cover group-hover:scale-105 transition-transform"
-                        />
-                        <div className="p-1.5 flex justify-between items-center text-[10px] bg-surface">
-                          <span className="font-mono text-on-surface font-semibold">
-                            #{f.frameIdx} ({f.time})
-                          </span>
-                          {f.isAnomalous && (
-                            <span className="text-error font-bold px-1 rounded bg-error/10">
-                              {f.label || 'Manipulated'}
+                  {selectedVideo.framesSplit?.length ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {selectedVideo.framesSplit.map((f, idx) => (
+                        <div
+                          key={idx}
+                          className={`rounded-lg border overflow-hidden bg-surface-container-low flex flex-col relative group ${
+                            f.isAnomalous ? 'border-error ring-1 ring-error/50' : 'border-outline-variant'
+                          }`}
+                        >
+                          {/* Backend does not return frame images — show label-only card */}
+                          <div className="w-full h-24 bg-surface-container flex items-center justify-center">
+                            <span className="material-symbols-outlined text-[28px] text-outline">image_not_supported</span>
+                          </div>
+                          <div className="p-1.5 flex justify-between items-center text-[10px] bg-surface">
+                            <span className="font-mono text-on-surface font-semibold">
+                              #{f.frameIdx} ({f.time})
                             </span>
-                          )}
+                            <span className={`font-bold px-1 rounded ${f.isAnomalous ? 'bg-error/10 text-error' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                              {f.label || (f.isAnomalous ? 'Manipulated' : 'Authentic')}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-on-surface-variant text-body-sm flex flex-col items-center gap-2">
+                      <span className="material-symbols-outlined text-[32px] text-outline">info</span>
+                      <span>No frame data available — the backend does not return extracted frame images.</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -994,41 +998,48 @@ export default function VideoForensicsPage() {
                       112x112 Normalization
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {selectedVideo.faceCrops?.map((fc) => (
-                      <div
-                        key={fc.id}
-                        className="p-2 border border-outline-variant rounded-lg bg-surface-container-low flex flex-col gap-1.5"
-                      >
-                        <div className="flex justify-between items-center">
-                          <span className="font-mono text-[11px] text-on-surface">
-                            Frame #{fc.frame}
-                          </span>
-                          <span
-                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                              fc.flag.includes('Manipulated') || fc.flag.includes('Artifact')
-                                ? 'bg-error/10 text-error'
-                                : 'bg-emerald-500/10 text-emerald-400'
-                            }`}
-                          >
-                            {fc.flag}
-                          </span>
+                  {selectedVideo.faceCrops?.length ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {selectedVideo.faceCrops.map((fc) => (
+                        <div
+                          key={fc.id}
+                          className="p-2 border border-outline-variant rounded-lg bg-surface-container-low flex flex-col gap-1.5"
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-mono text-[11px] text-on-surface">
+                              Frame #{fc.frame}
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                fc.flag.includes('Manipulated') || fc.flag.includes('Artifact')
+                                  ? 'bg-error/10 text-error'
+                                  : 'bg-emerald-500/10 text-emerald-400'
+                              }`}
+                            >
+                              {fc.flag}
+                            </span>
+                          </div>
+                          <div className="bg-black rounded h-20 flex items-center justify-center border border-outline-variant overflow-hidden relative">
+                            <img
+                              src={selectedVideo.fallbackThumbnail}
+                              alt="Face Crop"
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-2 border border-primary/60 border-dashed rounded" />
+                          </div>
+                          <div className="flex justify-between text-[10px] text-on-surface-variant">
+                            <span>Quality: {fc.confidence}%</span>
+                            <span>BBox: [{fc.box?.join(', ')}]</span>
+                          </div>
                         </div>
-                        <div className="bg-black rounded h-20 flex items-center justify-center border border-outline-variant overflow-hidden relative">
-                          <img
-                            src={selectedVideo.fallbackThumbnail}
-                            alt="Face Crop"
-                            className="w-full h-full object-cover"
-                          />
-                          <div className="absolute inset-2 border border-primary/60 border-dashed rounded" />
-                        </div>
-                        <div className="flex justify-between text-[10px] text-on-surface-variant">
-                          <span>Quality: {fc.confidence}%</span>
-                          <span>BBox: [{fc.box?.join(', ')}]</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-on-surface-variant text-body-sm flex flex-col items-center gap-2">
+                      <span className="material-symbols-outlined text-[32px] text-outline">info</span>
+                      <span>Face crop images are not returned by the current backend detector.</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1041,42 +1052,31 @@ export default function VideoForensicsPage() {
                     </span>
                     <span className="text-[11px] text-primary font-mono">Spatial Focus</span>
                   </div>
-                  {selectedVideo.heatmaps?.map((hm) => (
-                    <div
-                      key={hm.id}
-                      className="p-3 border border-outline-variant rounded-lg bg-surface-container-low flex flex-col gap-2"
-                    >
-                      <div className="flex justify-between items-center">
-                        <span className="text-label-sm font-semibold text-on-surface">
-                          Region: {hm.region}
-                        </span>
-                        <span className="font-mono text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded">
-                          Intensity: {hm.intensity}
-                        </span>
+                  {selectedVideo.heatmaps?.length ? (
+                    selectedVideo.heatmaps.map((hm) => (
+                      <div
+                        key={hm.id}
+                        className="p-3 border border-outline-variant rounded-lg bg-surface-container-low flex flex-col gap-2"
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="text-label-sm font-semibold text-on-surface">
+                            Region: {hm.region}
+                          </span>
+                          <span className="font-mono text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded">
+                            Intensity: {hm.intensity}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-on-surface-variant leading-snug">
+                          {hm.desc}
+                        </p>
                       </div>
-                      {/* Gradient visual representing heatmap activation */}
-                      <div className="h-20 rounded-lg relative overflow-hidden flex items-center justify-center border border-outline-variant">
-                        <img
-                          src={selectedVideo.fallbackThumbnail}
-                          alt="Heatmap base"
-                          className="w-full h-full object-cover"
-                        />
-                        <div
-                          className="absolute inset-0 opacity-70 mix-blend-color-dodge"
-                          style={{
-                            background:
-                              'radial-gradient(circle at 50% 60%, rgba(239,68,68,0.95) 0%, rgba(245,158,11,0.8) 35%, rgba(59,130,246,0.3) 70%, transparent 100%)'
-                          }}
-                        />
-                        <span className="absolute bottom-1 right-2 text-[9px] font-mono text-white/90 bg-black/60 px-1 rounded">
-                          Grad-CAM Map
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-on-surface-variant leading-snug">
-                        {hm.desc}
-                      </p>
+                    ))
+                  ) : (
+                    <div className="p-6 text-center text-on-surface-variant text-body-sm flex flex-col items-center gap-2">
+                      <span className="material-symbols-outlined text-[32px] text-outline">info</span>
+                      <span>Grad-CAM activation heatmaps are not generated by the current frame-based detector.</span>
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
             </div>
@@ -1426,9 +1426,9 @@ export default function VideoForensicsPage() {
                   </span>
                 </p>
                 <p>Confidence: {selectedVideo.confidence}%</p>
-                <p>Facial Mesh Integrity: {selectedVideo.metrics?.facialMeshIntegrity}%</p>
-                <p>Audio-Visual Sync Variance: {selectedVideo.metrics?.audioVisualSyncVariance}%</p>
-                <p>Lip-Sync Jitter Score: {selectedVideo.metrics?.lipSyncJitter}%</p>
+                <p>Facial Mesh Integrity: Not measured by frame-based detector</p>
+                <p>Audio-Visual Sync Variance: Not measured by frame-based detector</p>
+                <p>Lip-Sync Jitter Score: Not measured by frame-based detector</p>
               </div>
 
               <div>
