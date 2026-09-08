@@ -1,0 +1,18 @@
+{
+  "part8": {
+    "status": "BLOCKED",
+    "kaggle_cli": false,
+    "files_found": 0,
+    "path": "C:\\Programs\\Project\\ADIS\\adis-forensic-suite\\dist\\backend\\services\\audio_custom\\data\\in-the-wild"
+  },
+  "part9_10": {
+    "status": "SKIPPED",
+    "reason": "No ITW audio files present"
+  },
+  "part12_13": {
+    "status": "BLOCKED",
+    "reason": "ITW not acquired"
+  },
+  "timestamp": "2026-09-08T08:45:34.933552+00:00",
+  "phase": "Phase 5 -- Codec Confound Investigation Parts 8-13"
+}

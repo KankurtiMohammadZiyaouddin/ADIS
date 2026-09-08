@@ -1,0 +1,53 @@
+{
+  "dataset": "FOR-2sec (Fake-or-Real 2-second clips)",
+  "source": "Fake-or-Real (FoR) Dataset - York University APTLY Lab",
+  "url": "https://bil.eecs.yorku.ca/share/for-2sec.tar.gz",
+  "license": "Research use \u2014 York University APTLY Lab",
+  "total_records": 17870,
+  "n_real": 8935,
+  "n_fake": 8935,
+  "generators": [
+    "for_fake_mixed_tts",
+    "for_human_speech"
+  ],
+  "real_sources": [
+    "Arctic Dataset",
+    "LJSpeech",
+    "VoxForge",
+    "Custom recordings"
+  ],
+  "fake_sources": [
+    "Deep Voice 3 (DeepMind)",
+    "Google WaveNet TTS"
+  ],
+  "sample_rate_hz": 16000,
+  "channels": 1,
+  "format": "WAV",
+  "clip_duration_s": 2.0,
+  "datasets": [
+    "for_2sec"
+  ],
+  "n_generators": 2,
+  "n_speakers_known": 0,
+  "duration_total_hours": 9.93,
+  "sample_rate_distribution": {
+    "16000": 17870
+  },
+  "split_A": {
+    "n_train": 13956,
+    "n_val": 2826,
+    "n_test": 1088,
+    "train_label_dist": {
+      "REAL": 6978,
+      "FAKE": 6978
+    },
+    "val_label_dist": {
+      "REAL": 1413,
+      "FAKE": 1413
+    },
+    "test_label_dist": {
+      "REAL": 544,
+      "FAKE": 544
+    }
+  }
+}

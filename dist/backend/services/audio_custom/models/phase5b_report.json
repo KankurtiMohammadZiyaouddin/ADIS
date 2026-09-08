@@ -1,0 +1,128 @@
+{
+  "kaggle": {
+    "auth_ok": false,
+    "kaggle_json": "C:\\Users\\ZIYAOUDDIN\\.kaggle\\kaggle.json",
+    "status": "BLOCKED"
+  },
+  "itw_provenance": {
+    "dataset_name": "In The Wild Audio Deepfake",
+    "kaggle_slug": "abdallamohamed312/in-the-wild-audio-deepfake",
+    "paper": "Muller et al. (2022) - Does Audio Deepfake Detection Generalize?",
+    "arxiv": "https://arxiv.org/abs/2203.16263",
+    "license": "CC BY 4.0 (per paper supplementary; verify independently before use)",
+    "license_verification": "NOT INDEPENDENTLY VERIFIED from Kaggle page (requires auth)",
+    "label_definitions": {
+      "REAL": "Genuine human speech from public sources (interviews, podcasts, YouTube)",
+      "FAKE": "AI-generated speech deepfakes targeting public figures"
+    },
+    "known_characteristics": {
+      "real_sources": "YouTube, interviews, podcasts -- varied recording conditions",
+      "fake_sources": "Multiple TTS/voice conversion systems targeting real speakers",
+      "speakers": "Public figures (politicians, celebrities, etc.)",
+      "format_real": "Mixed -- MP3/WAV, various sample rates",
+      "format_fake": "Mixed -- MP3/WAV, various sample rates",
+      "key_property": "Both REAL and FAKE sourced from similar real-world recording conditions",
+      "codec_confound_risk": "LOW -- unlike FOR-2sec, both classes come from real-world recordings"
+    },
+    "expected_size": {
+      "total_files": "~38,000 (per paper Table 1)",
+      "real_approx": "~19,000",
+      "fake_approx": "~19,000",
+      "total_size_gb": "~10-15 GB estimated"
+    },
+    "why_preferred_over_for2sec": "Both REAL and FAKE recordings are sourced from real-world internet audio with similar recording/compression characteristics, removing the codec confound that invalidated the FOR-2sec experiment.",
+    "notes": [
+      "Do NOT infer speaker identity from filenames without paper documentation",
+      "Generator information may be available in accompanying metadata files",
+      "Verify license from actual Kaggle page once authenticated"
+    ],
+    "acquisition_date": null,
+    "acquisition_status": "PENDING -- requires Kaggle authentication"
+  },
+  "codec_augmentation": {
+    "n_aug_samples": 1200,
+    "n_combined": 2400,
+    "rf_val": {
+      "split": "val",
+      "n": 2826,
+      "accuracy": 0.9759,
+      "precision": 0.9759,
+      "recall": 0.9759,
+      "f1": 0.9759,
+      "fpr": 0.0241,
+      "fnr": 0.0241,
+      "roc_auc": 0.9962,
+      "confusion_matrix": {
+        "tn": 1379,
+        "fp": 34,
+        "fn": 34,
+        "tp": 1379
+      }
+    },
+    "rf_test": {
+      "split": "test",
+      "n": 1088,
+      "accuracy": 0.33,
+      "precision": 0.2365,
+      "recall": 0.1526,
+      "f1": 0.1855,
+      "fpr": 0.4926,
+      "fnr": 0.8474,
+      "roc_auc": 0.3295,
+      "confusion_matrix": {
+        "tn": 276,
+        "fp": 268,
+        "fn": 461,
+        "tp": 83
+      }
+    },
+    "lr_val": {
+      "split": "val",
+      "n": 2826,
+      "accuracy": 0.948,
+      "precision": 0.9502,
+      "recall": 0.9455,
+      "f1": 0.9479,
+      "fpr": 0.0495,
+      "fnr": 0.0545,
+      "roc_auc": 0.9889,
+      "confusion_matrix": {
+        "tn": 1343,
+        "fp": 70,
+        "fn": 77,
+        "tp": 1336
+      }
+    },
+    "lr_test": {
+      "split": "test",
+      "n": 1088,
+      "accuracy": 0.5754,
+      "precision": 0.5844,
+      "recall": 0.5221,
+      "f1": 0.5515,
+      "fpr": 0.3713,
+      "fnr": 0.4779,
+      "roc_auc": 0.6242,
+      "confusion_matrix": {
+        "tn": 342,
+        "fp": 202,
+        "fn": 260,
+        "tp": 284
+      }
+    },
+    "baseline_rf_test_auc": 0.4683,
+    "improvement": -0.1388
+  },
+  "itw_infrastructure": {
+    "acquisition_script": "C:\\Programs\\Project\\ADIS\\adis-forensic-suite\\dist\\backend\\services\\audio_custom\\train\\10_acquire_itw.py",
+    "status": "READY -- run after kaggle auth"
+  },
+  "gemini": {
+    "present": true,
+    "used_in_training": false
+  },
+  "production": {
+    "files_changed": "src/pages/AudioForensicsPage.jsx\nsrc/pages/VideoForensicsPage.jsx\nsrc/services/deepfakeService.js"
+  },
+  "timestamp": "2026-09-08T09:25:14.460368+00:00"
+}

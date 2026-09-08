@@ -1,0 +1,17 @@
+﻿# Audio data -- large, not committed
+data/
+features/
+
+# Unseen test samples -- not committed
+tests/unseen_gemini/*.mp3
+tests/unseen_gemini/*.wav
+tests/unseen_gemini/*.flac
+tests/unseen_gemini/*.m4a
+
+# Trained model artifacts
+models/*.joblib
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo

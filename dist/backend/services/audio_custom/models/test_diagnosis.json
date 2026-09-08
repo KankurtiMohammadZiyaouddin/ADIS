@@ -1,0 +1,65 @@
+{
+  "cohen_d_train_mean_abs": 0.41892999327442715,
+  "cohen_d_test_mean_abs": 0.6127108168400539,
+  "separability_ratio": 1.4625613507665167,
+  "rf_combined_retrain": {
+    "train_n": 16782,
+    "test_accuracy": 0.495404,
+    "test_fnr": 0.972426,
+    "test_fpr": 0.036765,
+    "test_roc_auc": 0.464178
+  },
+  "top10_test_features_by_cohens_d": [
+    {
+      "feature": "mfcc_delta_4_std",
+      "cohen_d_test": -2.1956,
+      "cohen_d_train": 0.891
+    },
+    {
+      "feature": "mfcc_4_mean",
+      "cohen_d_test": 2.157,
+      "cohen_d_train": 0.1976
+    },
+    {
+      "feature": "mfcc_delta2_4_std",
+      "cohen_d_test": -2.0624,
+      "cohen_d_train": 0.626
+    },
+    {
+      "feature": "mfcc_4_std",
+      "cohen_d_test": -1.6634,
+      "cohen_d_train": 0.5137
+    },
+    {
+      "feature": "mfcc_delta2_10_std",
+      "cohen_d_test": -1.6251,
+      "cohen_d_train": 0.4118
+    },
+    {
+      "feature": "mfcc_9_mean",
+      "cohen_d_test": -1.6018,
+      "cohen_d_train": -0.2882
+    },
+    {
+      "feature": "mfcc_8_std",
+      "cohen_d_test": -1.5071,
+      "cohen_d_train": 0.9398
+    },
+    {
+      "feature": "spectral_contrast_band6_std",
+      "cohen_d_test": 1.4776,
+      "cohen_d_train": -0.2375
+    },
+    {
+      "feature": "mfcc_delta_8_std",
+      "cohen_d_test": -1.4596,
+      "cohen_d_train": 1.1669
+    },
+    {
+      "feature": "spectral_contrast_band0_std",
+      "cohen_d_test": 1.434,
+      "cohen_d_train": 0.1524
+    }
+  ],
+  "diagnosis": "The FOR-2sec test split has lower feature separability than train/val (ratio=1.463). This is a within-dataset covariate shift \u2014 the test split uses different speakers/sessions, causing feature distributions to shift even though generators are the same. The model has learned dataset-session artefacts rather than robust deepfake signatures."
+}

@@ -1,0 +1,35 @@
+{
+  "dataset_name": "In The Wild Audio Deepfake",
+  "kaggle_slug": "abdallamohamed312/in-the-wild-audio-deepfake",
+  "paper": "Muller et al. (2022) - Does Audio Deepfake Detection Generalize?",
+  "arxiv": "https://arxiv.org/abs/2203.16263",
+  "license": "CC BY 4.0 (per paper supplementary; verify independently before use)",
+  "license_verification": "NOT INDEPENDENTLY VERIFIED from Kaggle page (requires auth)",
+  "label_definitions": {
+    "REAL": "Genuine human speech from public sources (interviews, podcasts, YouTube)",
+    "FAKE": "AI-generated speech deepfakes targeting public figures"
+  },
+  "known_characteristics": {
+    "real_sources": "YouTube, interviews, podcasts -- varied recording conditions",
+    "fake_sources": "Multiple TTS/voice conversion systems targeting real speakers",
+    "speakers": "Public figures (politicians, celebrities, etc.)",
+    "format_real": "Mixed -- MP3/WAV, various sample rates",
+    "format_fake": "Mixed -- MP3/WAV, various sample rates",
+    "key_property": "Both REAL and FAKE sourced from similar real-world recording conditions",
+    "codec_confound_risk": "LOW -- unlike FOR-2sec, both classes come from real-world recordings"
+  },
+  "expected_size": {
+    "total_files": "~38,000 (per paper Table 1)",
+    "real_approx": "~19,000",
+    "fake_approx": "~19,000",
+    "total_size_gb": "~10-15 GB estimated"
+  },
+  "why_preferred_over_for2sec": "Both REAL and FAKE recordings are sourced from real-world internet audio with similar recording/compression characteristics, removing the codec confound that invalidated the FOR-2sec experiment.",
+  "notes": [
+    "Do NOT infer speaker identity from filenames without paper documentation",
+    "Generator information may be available in accompanying metadata files",
+    "Verify license from actual Kaggle page once authenticated"
+  ],
+  "acquisition_date": null,
+  "acquisition_status": "PENDING -- requires Kaggle authentication"
+}

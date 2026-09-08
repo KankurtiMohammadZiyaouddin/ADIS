@@ -1,0 +1,92 @@
+{
+  "generated_at": "2026-09-07T20:45:24",
+  "random_seed": 42,
+  "total_records": 17870,
+  "dataset_statistics": {
+    "dataset": "FOR-2sec (Fake-or-Real 2-second clips)",
+    "source": "Fake-or-Real (FoR) Dataset - York University APTLY Lab",
+    "url": "https://bil.eecs.yorku.ca/share/for-2sec.tar.gz",
+    "license": "Research use \u2014 York University APTLY Lab",
+    "total_records": 17870,
+    "n_real": 8935,
+    "n_fake": 8935,
+    "generators": [
+      "for_fake_mixed_tts",
+      "for_human_speech"
+    ],
+    "real_sources": [
+      "Arctic Dataset",
+      "LJSpeech",
+      "VoxForge",
+      "Custom recordings"
+    ],
+    "fake_sources": [
+      "Deep Voice 3 (DeepMind)",
+      "Google WaveNet TTS"
+    ],
+    "sample_rate_hz": 16000,
+    "channels": 1,
+    "format": "WAV",
+    "clip_duration_s": 2.0,
+    "datasets": [
+      "for_2sec"
+    ],
+    "n_generators": 2,
+    "n_speakers_known": 0,
+    "duration_total_hours": 9.93,
+    "sample_rate_distribution": {
+      "16000": 17870
+    },
+    "split_A": {
+      "n_train": 13956,
+      "n_val": 2826,
+      "n_test": 1088,
+      "train_label_dist": {
+        "REAL": 6978,
+        "FAKE": 6978
+      },
+      "val_label_dist": {
+        "REAL": 1413,
+        "FAKE": 1413
+      },
+      "test_label_dist": {
+        "REAL": 544,
+        "FAKE": 544
+      }
+    }
+  },
+  "split_validation": {
+    "split_A": {
+      "n_train": 13956,
+      "n_val": 2826,
+      "n_test": 1088,
+      "train_label_dist": {
+        "REAL": 6978,
+        "FAKE": 6978
+      },
+      "val_label_dist": {
+        "REAL": 1413,
+        "FAKE": 1413
+      },
+      "test_label_dist": {
+        "REAL": 544,
+        "FAKE": 544
+      },
+      "file_leakage_check": "PASS",
+      "speaker_leakage_check": "SKIP \u2014 no speaker metadata",
+      "train_val_file_overlap": 0,
+      "train_test_file_overlap": 0,
+      "val_test_file_overlap": 0,
+      "train_test_speaker_overlap": "unknown"
+    },
+    "split_B": {
+      "holdout_generator": "for_2sec_official_test_partition",
+      "n_train": 13956,
+      "n_val": 2826,
+      "n_test": 1088,
+      "status": "APPROXIMATE",
+      "file_leakage_check": "PASS",
+      "generator_leakage_check": "APPROXIMATE \u2014 true generator labels not available per file"
+    }
+  }
+}

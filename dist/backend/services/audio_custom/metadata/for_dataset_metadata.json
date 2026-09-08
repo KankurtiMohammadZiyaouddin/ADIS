@@ -1,0 +1,23 @@
+{
+  "dataset_name": "FOR-2sec",
+  "source": "Fake-or-Real (FoR) Dataset - York University APTLY Lab",
+  "url": "https://bil.eecs.yorku.ca/share/for-2sec.tar.gz",
+  "license": "Research use \u2014 York University APTLY Lab",
+  "citation": "Reimao & Tzerpos (2019). For: A dataset for synthetic speech detection.",
+  "real_sources": [
+    "Arctic Dataset",
+    "LJSpeech",
+    "VoxForge",
+    "Custom recordings"
+  ],
+  "fake_sources": [
+    "Deep Voice 3 (DeepMind)",
+    "Google WaveNet TTS"
+  ],
+  "sample_rate_hz": 16000,
+  "channels": 1,
+  "format": "WAV",
+  "clip_duration_s": 2.0,
+  "normalized": true,
+  "notes": "for-2sec variant: files truncated at 2 seconds, normalized for sample rate, volume, channels. Generator per file is NOT labeled in filenames. FAKE files are a mix of Deep Voice 3 and WaveNet TTS output."
+}
