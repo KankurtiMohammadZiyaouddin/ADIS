@@ -125,3 +125,86 @@ export function clearAnalysisHistory() {
   localStorage.removeItem(STORE_KEY);
   fetch('/api/history', { method: 'DELETE' }).catch(() => {});
 }
+
+// ── Case & Evidence API Sync ──────────────────────────────────────────────────
+
+/**
+ * Fetch all investigations from backend SQLite /api/cases
+ */
+export async function getCases() {
+  try {
+    const res = await fetch('/api/cases');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.cases)) {
+        return data.cases;
+      }
+    }
+  } catch (err) {
+    console.debug('[AnalysisStore] getCases fallback:', err.message);
+  }
+  return [
+    { id: 'CAS-4492', title: 'Deepfake Executive Impersonation', status: 'active', created_at: '2026-09-28', investigator: 'Lead Agent' },
+    { id: 'CAS-4491', title: 'Viral Synthetic Speech Audio Clip', status: 'active', created_at: '2026-09-27', investigator: 'Lead Agent' },
+    { id: 'CAS-2026-081', title: 'Election Broadcast Video Manipulation', status: 'active', created_at: '2026-09-26', investigator: 'Forensics Team' },
+  ];
+}
+
+/**
+ * Create a new case in SQLite DB
+ */
+export async function createCase({ title, description, investigator = 'ADIS Analyst' }) {
+  try {
+    const res = await fetch('/api/cases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description, investigator }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.case;
+    }
+  } catch (err) {
+    console.error('[AnalysisStore] createCase error:', err);
+  }
+  return null;
+}
+
+/**
+ * Fetch evidence items attached to a case
+ */
+export async function getCaseEvidence(caseId) {
+  try {
+    const res = await fetch(`/api/cases/${caseId}/evidence`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.evidence)) {
+        return data.evidence;
+      }
+    }
+  } catch (err) {
+    console.debug('[AnalysisStore] getCaseEvidence fallback:', err.message);
+  }
+  return [];
+}
+
+/**
+ * Add an evidence item to a case
+ */
+export async function addEvidenceToCase(caseId, evidenceData) {
+  try {
+    const res = await fetch(`/api/cases/${caseId}/evidence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(evidenceData),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.evidence;
+    }
+  } catch (err) {
+    console.error('[AnalysisStore] addEvidenceToCase error:', err);
+  }
+  return null;
+}
+

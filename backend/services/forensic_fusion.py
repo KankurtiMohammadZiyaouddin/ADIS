@@ -92,13 +92,6 @@ def fuse_detector_results(media_type: str, detector_results: list, forensic_indi
 def fuse_cross_modal_evidence(modality_payload: dict) -> dict:
     """
     Authoritative cross-modal forensic fusion correlating evidence across Image, Audio, and Video.
-    
-    Accepts:
-      modality_payload: {
-         "image": { "classification": "...", "confidence": 0.85, ... },
-         "audio": { "classification": "...", "confidence": 0.92, ... },
-         "video": { ... }
-      }
     """
     if not modality_payload:
         return {
@@ -147,8 +140,6 @@ def fuse_cross_modal_evidence(modality_payload: dict) -> dict:
             "model_name": item.get("model_name") or item.get("model") or "ADIS-Detector",
             "model_version": item.get("model_version", "1.0.0"),
             "framework": item.get("framework", "Unknown"),
-            "method": item.get("method") or ("heuristic" if fallback else "machine_learning"),
-            "is_ai_model": bool(item.get("is_ai_model") if "is_ai_model" in item else (not fallback)),
             "fallback_used": fallback,
             "filename": item.get("filename", f"{mod_name}_evidence"),
             "sha256": item.get("sha256", ""),
@@ -183,7 +174,6 @@ def fuse_cross_modal_evidence(modality_payload: dict) -> dict:
     detector_agreement = True
     disagreement_warning = None
 
-    # Cross-modal conflict evaluation
     if fake_modalities and real_modalities:
         fake_max_conf = max(s["confidence"] for _, s in fake_modalities)
         real_max_conf = max(s["confidence"] for _, s in real_modalities)

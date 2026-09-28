@@ -28,3 +28,36 @@ dist-ssr
 *.sw?
 *.db
 
+# ── AI Model checkpoints (exceed GitHub 100MB limit — do NOT commit) ──────────
+# Store these externally (Google Drive, Hugging Face, S3, etc.)
+*.pth
+*.pt
+*.ckpt
+*.bin
+*.onnx
+backend/models/
+dist/backend/models/
+
+# ── Python cache (machine-specific, never commit) ─────────────────────────────
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# ── Python virtual environments ───────────────────────────────────────────────
+.venv/
+.venv-1/
+.venv311/
+venv/
+env/
+
+# ── Generated heatmap/result images (runtime output, not source) ──────────────
+dist/backend/results/
+backend/results/
+
+# ── Mobile projects (managed separately) ─────────────────────────────────────
+mobile/
+adis-new/
+
+# ── Expo cache ────────────────────────────────────────────────────────────────
+.expo/

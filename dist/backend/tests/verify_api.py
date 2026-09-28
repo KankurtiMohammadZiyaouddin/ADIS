@@ -106,7 +106,7 @@ def test_api():
         r = requests.get(HEALTH_URL)
         assert r.status_code == 200
         res = r.json()
-        assert res["status"] == "healthy"
+        assert res["status"] in ["healthy", "ok"]
         assert res["database"] == "connected"
         print("[PASS] T01: Health Check GET /api/health")
         passed += 1

@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getCaseEvidence, getAnalysisHistory } from '../services/analysisStore';
 
 const INITIAL_EVIDENCE = [
   {
@@ -108,11 +109,73 @@ const INITIAL_EVIDENCE = [
 
 export default function EvidencePage() {
   const navigate = useNavigate();
-  const [evidenceList] = useState(INITIAL_EVIDENCE);
-  const [selectedItem, setSelectedItem] = useState(INITIAL_EVIDENCE[1]); // Default select video
+  const [evidenceList, setEvidenceList] = useState(INITIAL_EVIDENCE);
+  const [selectedItem, setSelectedItem] = useState(INITIAL_EVIDENCE[1]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
+
+  useEffect(() => {
+    async function loadEvidence() {
+      try {
+        const dbItems = await getCaseEvidence('CAS-4492');
+        const historyItems = getAnalysisHistory();
+        
+        const mappedHistory = historyItems.map((h, i) => ({
+          id: h.id || `HIST-${i}`,
+          filename: h.filename || h.file_name || 'Evidence_Media',
+          type: h.type === 'video' ? 'Video' : h.type === 'audio' ? 'Audio' : 'Image',
+          format: `${h.type?.toUpperCase() || 'MEDIA'} File`,
+          sha256: h.sha256 || 'N/A',
+          timestamp: h.timestamp || new Date().toISOString(),
+          status: 'ANALYZED',
+          verdict: h.verdict === 'FAKE' ? 'Manipulated / Synthetic' : h.verdict === 'REAL' ? 'Authentic' : 'Inconclusive',
+          confidence: h.confidence || 0,
+          size: h.size || '3.5 MB',
+          resolution: h.resolution || 'N/A',
+          device: 'ADIS Sensor Node',
+          preview: h.preview || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=600&auto=format&fit=crop&q=80',
+          isVideo: h.type === 'video',
+          route: h.type === 'video' ? '/video-forensics' : h.type === 'audio' ? '/audio-forensics' : '/image-forensics'
+        }));
+
+        const mappedDb = dbItems.map((item) => ({
+          id: item.id || `EVD-${Date.now()}`,
+          filename: item.file_name || 'Attached Evidence',
+          type: item.media_type === 'video' ? 'Video' : item.media_type === 'audio' ? 'Audio' : 'Image',
+          format: `${item.media_type?.toUpperCase() || 'FILE'} Evidence`,
+          sha256: item.file_hash || 'N/A',
+          timestamp: item.added_at || new Date().toISOString(),
+          status: 'VERIFIED',
+          verdict: item.classification || 'ANALYZED',
+          confidence: item.confidence ? Math.round(item.confidence * 100) : 90,
+          size: '2.1 MB',
+          resolution: '1920 x 1080',
+          device: 'Forensic Ingestion Hub',
+          preview: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80',
+          isVideo: item.media_type === 'video',
+          route: item.media_type === 'video' ? '/video-forensics' : item.media_type === 'audio' ? '/audio-forensics' : '/image-forensics'
+        }));
+
+        const combined = [...mappedDb, ...mappedHistory, ...INITIAL_EVIDENCE];
+        // Deduplicate by ID or sha256
+        const seen = new Set();
+        const unique = [];
+        for (const item of combined) {
+          const key = item.sha256 !== 'N/A' ? item.sha256 : item.id;
+          if (!seen.has(key)) {
+            seen.add(key);
+            unique.push(item);
+          }
+        }
+        setEvidenceList(unique);
+        if (unique.length > 0) setSelectedItem(unique[0]);
+      } catch (err) {
+        console.debug('Evidence load fallback:', err);
+      }
+    }
+    loadEvidence();
+  }, []);
 
   const filteredItems = evidenceList.filter((item) => {
     const matchesSearch =
